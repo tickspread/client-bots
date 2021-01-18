@@ -16,9 +16,10 @@ class FTXAPI:
         self.host = "wss://ftx.com/ws/"
         self.logger = logger
         self.callbacks = []
+        self.last_ping = 0
     
     async def connect(self):
-        self.websocket = await websockets.connect(self.host)
+        self.websocket = await websockets.connect(self.host, ping_interval=None)
         asyncio.get_event_loop().create_task(self.loop(self.websocket))
 
     async def subscribe(self, topic):
@@ -34,6 +35,14 @@ class FTXAPI:
             #message = json.loads(message)
             for callback in self.callbacks:
                 callback("ftx", message)
+            #print("Debug")
+            '''
+            if (time.time() - self.last_ping > 10.0):
+                ping = json_dumps({'op': 'ping'})
+                print(ping)
+                await self.websocket.send(ping)
+                self.last_ping = time.time()
+            '''
 
 class BitMEXAPI:
     def __init__(self, logger=logging.getLogger()):
