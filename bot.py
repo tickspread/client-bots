@@ -317,11 +317,20 @@ class MarketMaker:
         self.logger.info("Sent: %d, Received: %d", order.auction_id_send, self.last_auction_id)
 
     def exec_maker(self, order):
-        if (order.state != OrderState.ACKED):
+        if (order.state != OrderState.ACKED and
+            order.state != OrderState.ACTIVE):
             self.logger.warning(
                 "Received maker_order, but order %d is in state %s",
                 order.clordid, order_state_to_str(order.state))
         order.state = OrderState.MAKER
+    
+    def exec_active(self, order):
+        if (order.state != OrderState.ACKED and
+            order.state != OrderState.MAKER):
+            self.logger.warning(
+                "Received active_order, but order %d is in state %d",
+                order.clordid, order_state_to_str(order.state))
+        order.state = OrderState.ACTIVE
 
     def exec_remove(self, order):
         if (order.cancel != CancelState.PENDING):
@@ -364,6 +373,8 @@ class MarketMaker:
             self.exec_maker(order)
         elif (event == "delete_order"):
             self.exec_remove(order)
+        elif (event == "active_order"):
+            self.exec_active(order)
         else:
             self.logger.warning("Order %d received unknown event %s",
                                 order.clordid, event)
@@ -458,7 +469,7 @@ class MarketMaker:
             logging.info("AUCTION: %d" % auction_id)
             pass
         elif (event == "acknowledge_order" or event == "maker_order"
-              or event == "delete_order"):
+              or event == "delete_order" or event == "active_order"):
             if (not 'client_order_id' in payload):
                 logging.warning(
                     "No 'client_order_id' in TickSpread %s payload", event)
