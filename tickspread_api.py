@@ -59,16 +59,11 @@ class TickSpreadAPI:
     
     def get_next_clordid(self):
         return self.next_id
-
-    def create_order(self, *, clordid=0, amount, price, leverage, symbol="BTC-PERP", side, type="limit"):
-        if (clordid == 0):
-            clordid = self.next_id
-            self.next_id += 1
         
-        order = {"client_order_id": clordid, "amount": amount, "price": price, "leverage": leverage, "symbol": symbol, "side": side, "type": type}
+    def create_order_sync(self, client_order_id, amount, price, leverage, symbol, side, type):
+    
+        order = {"client_order_id": client_order_id, "amount": amount, "price": price, "leverage": leverage, "symbol": symbol, "side": side, "type": type}
         
-        print(order)
-
         url = '%s/v1/orders' % self.http_host
         try:
             self.logger.info(order)
@@ -77,17 +72,36 @@ class TickSpreadAPI:
         
         except Exception as e:
             self.logger.error(e)
+            logging.shutdown()
             sys.exit(1)
         
         try:
             client_order_id = json.loads(r.text)['client_order_id']
         except:
             self.logger.error(r.text[:500])
+            logging.shutdown()
             sys.exit(1)
         
         return client_order_id
 
-    def delete_order(self, client_order_id):
+    def create_order(self, *, client_order_id=0, amount, price, leverage, symbol="BTC-PERP", side, type="limit", async=False):
+        if (client_order_id == 0):
+            client_order_id = self.next_id
+            self.next_id += 1
+        if (async==False):    
+            return self.create_order_sync(client_order_id,amount,price,leverage,symbol,side,type)
+        else:
+            #print("%f: ASYNC NEW" % time.time())
+            loop = asyncio.get_event_loop()
+            loop.run_in_executor(
+            None,
+            self.create_order_sync,
+            client_order_id,amount,price,leverage,symbol,side,type)
+            
+            #print("%f: ASYNC NEW END" % time.time())
+            return "OK"
+
+    def delete_order_sync(self, client_order_id):
         url = '%s/v1/orders/%s' % (self.http_host, client_order_id)
         r = None
         try:
@@ -96,8 +110,20 @@ class TickSpreadAPI:
         except Exception as e:
             if (r): self.logger.error(r.text)
             else: self.logger.error(e)
+            logging.shutdown()
             sys.exit(1)
         return json_response
+
+    def delete_order(self, client_order_id, async=False):
+        if (async==False):
+            return self.delete_order_sync(client_order_id)
+        else:
+            loop = asyncio.get_event_loop()
+            loop.run_in_executor(
+            None,
+            self.delete_order_sync,
+            client_order_id)
+            return "OK"
     
     async def connect(self):
         self.websocket = await websockets.connect("%s/realtime" % self.ws_host, ping_interval=None)
