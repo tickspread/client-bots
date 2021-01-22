@@ -141,6 +141,7 @@ class TickSpreadAPI:
             await self.websocket.send(json.dumps(data))
         except Exception as e:
             self.logger.error(e)
+            logging.shutdown()
             sys.exit(1)
 
     def on_message(self, callback):
@@ -152,8 +153,8 @@ class TickSpreadAPI:
                 message = await websocket.recv()
             except Exception as e:
                 self.logger.error(e)
-                sys.exit(1)
-            
+                logging.shutdown()
+                sys.exit(1)       
             for callback in self.callbacks:
                 callback('tickspread', message)
 
