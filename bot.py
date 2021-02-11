@@ -532,14 +532,14 @@ class MarketMaker:
 
 async def main():
     api = TickSpreadAPI()
-    #api.register("maker@tickspread.com", "maker")
+    api.register("maker@tickspread.com", "maker")
     #time.sleep(3.0)
     login_status = api.login("maker@tickspread.com", "maker")
     if (not login_status):
         asyncio.get_event_loop().stop()
         return 1
 
-    mmaker = MarketMaker(api, tick_jump=5, orders_per_side=20)
+    mmaker = MarketMaker(api, tick_jump=5, orders_per_side=5)
 
     #bybit_api = ByBitAPI()
     ftx_api = FTXAPI()
