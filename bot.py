@@ -76,11 +76,17 @@ def order_state_to_str(state):
     else:
         return "bug"
 
-
 class CancelState(Enum):
     NORMAL = 0
     PENDING = 1
 
+def order_cancel_to_str(cancel):
+    if (cancel == CancelState.NORMAL):
+        return " "
+    elif (cancel == CancelState.PENDING):
+        return "x"
+    else:
+        return "?"
 
 class Order:
     def __init__(self, side, logger):
@@ -93,16 +99,16 @@ class Order:
         self.cancel = CancelState.NORMAL
         self.auction_id_send = 0
         self.auction_id_cancel = 0
+        self.last_send_time = 0.0
         self.logger = logger
 
     def __str__(self):
         if (self.state == OrderState.EMPTY):
             return ""
         else:
-            return "%s %d/%d @ %d (%d) [%s]" % (
+            return "%s %d/%d @ %d (%d) [%s]%s" % (
                 side_to_str(self.side), self.amount_left, self.total_amount,
-                self.price, self.clordid, order_state_to_str(self.state))
-
+                self.price, self.clordid, order_state_to_str(self.state), order_cancel_to_str(self.cancel))
 
 class MarketMakerSide:
     def __init__(self, parent, *, side, target_num_orders, max_orders,
@@ -123,8 +129,9 @@ class MarketMakerSide:
 
     def debug_orders(self):
         for i in range(self.max_orders):
-            if (self.orders[i].state != OrderState.EMPTY):
-                self.parent.logger.info("%d: %s", i, self.orders[i])
+            index = (self.top_order + i) % (self.max_orders)
+            if (self.orders[index].state != OrderState.EMPTY):
+                self.parent.logger.info("%d: %s", index, self.orders[index])
 
     def set_new_price(self, new_price):
         if (self.side == Side.BID):
@@ -185,6 +192,10 @@ class MarketMakerSide:
                 if (size > 0):
                     self.available_limit -= size
                     self.parent.send_new(order, size, price)
+            if (order.state != OrderState.EMPTY
+                and order.cancel == CancelState.NORMAL):
+                if (price != order.price):
+                    self.parent.send_cancel(order)
             price += price_increment
 
     def recalculate_bottom_orders(self):
@@ -276,6 +287,7 @@ class MarketMaker:
         logging.info(
             "->NEW %s %d @ %d (%d)" %
             (side_to_str(order.side), amount, price, clordid))
+        order.last_send_time = time.time()
         if (self.real):
             self.register_new(order, clordid, amount, price)
             self.api.create_order(amount=amount,
@@ -286,6 +298,10 @@ class MarketMaker:
                                   async=True)
 
     def send_cancel(self, order):
+        if (time.time() - order.last_send_time < 0.030):
+            logging.info("Cannot cancel order %d, must wait at least 30ms")
+            return
+        
         logging.info(
             "->CAN %s %d @ %d (%d)" % (side_to_str(
                 order.side), order.amount_left, order.price, order.clordid))
@@ -532,14 +548,17 @@ class MarketMaker:
 
 async def main():
     api = TickSpreadAPI()
-    #api.register("maker@tickspread.com", "maker")
-    #time.sleep(3.0)
-    login_status = api.login("maker@tickspread.com", "maker")
+    print("REGISTER")
+    api.register("maker2@tickspread.com", "maker2")
+    time.sleep(3.0)
+    print("STARTING")
+    login_status = api.login("maker2@tickspread.com", "maker2")
     if (not login_status):
         asyncio.get_event_loop().stop()
+        print("Login Failure")
         return 1
 
-    mmaker = MarketMaker(api, tick_jump=5, orders_per_side=20)
+    mmaker = MarketMaker(api, tick_jump=5, orders_per_side=10)
 
     #bybit_api = ByBitAPI()
     ftx_api = FTXAPI()
@@ -575,6 +594,7 @@ async def main():
     #await huobi_api.connect()
     #await huobi_api.subscribe()
     #huobi_api.on_message(mmaker.callback)
+    print("FINISH INIT")
 
 
 if __name__ == "__main__":
