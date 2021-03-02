@@ -20,6 +20,7 @@ class TickSpreadAPI:
     def login(self, username, password):
         payload = {"username": username, "password_hash": password}
         url = '%s/v1/accounts/login' % self.http_host
+        print(url, payload)
         
         try:
             r = requests.post(url, json=payload, timeout=5.0)
@@ -42,7 +43,9 @@ class TickSpreadAPI:
         return True
     
     def register(self, username, password):
-        payload = {"type": "email_pass", "email": username, "password": password}
+        authentication_method = {"type": "email_pass", "email": username, "password": password}
+        new_user = {"role": "admin", "authentication_methods": [authentication_method]}
+        payload = {"users": [new_user]}
         url = '%s/v1/accounts' % self.http_host
         
         try:
@@ -160,8 +163,8 @@ async def main():
     logging.basicConfig(level=logging.INFO, filename="test.log")
     
     api = TickSpreadAPI()
-    print(api.register("test@tickspread.com", "test"))
-    login_status = api.login("test@tickspread.com", "test")
+    print(api.register("test@tickspread.com", "tick"))
+    login_status = api.login("test@tickspread.com", "tick")
         
     if (not login_status):
         print("Login failed")
