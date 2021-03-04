@@ -4,7 +4,6 @@ import asyncio
 import websockets
 import logging
 
-import Crypto.PublicKey.RSA
 import time
 import numpy as np
 import math
