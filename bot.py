@@ -549,10 +549,10 @@ class MarketMaker:
 async def main():
     api = TickSpreadAPI()
     print("REGISTER")
-    api.register("maker2@tickspread.com", "maker2")
+    api.register("maker@tickspread.com", "maker")
     time.sleep(3.0)
     print("STARTING")
-    login_status = api.login("maker2@tickspread.com", "maker2")
+    login_status = api.login("maker@tickspread.com", "maker")
     if (not login_status):
         asyncio.get_event_loop().stop()
         print("Login Failure")

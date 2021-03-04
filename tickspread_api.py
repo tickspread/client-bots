@@ -43,9 +43,7 @@ class TickSpreadAPI:
         return True
     
     def register(self, username, password):
-        authentication_method = {"type": "email_pass", "email": username, "password": password}
-        new_user = {"role": "admin", "authentication_methods": [authentication_method]}
-        payload = {"users": [new_user]}
+        payload = {"type": "email_pass", "email": username, "password": password}
         url = '%s/v1/accounts' % self.http_host
         
         try:
