@@ -567,8 +567,8 @@ async def main():
     #huobi_api = HuobiAPI()
 
     await api.connect()
-    await api.subscribe("market_data", {"symbol": "BTC-PERP"})
-    await api.subscribe("user_data", {"symbol": "BTC-PERP"})
+    # await api.subscribe("market_data", {"symbol": "BTC-PERP"})
+    await api.subscribe("user_data_v2", {"symbol": "BTC-PERP"})
     api.on_message(mmaker.callback)
 
     #await bybit_api.connect()

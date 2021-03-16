@@ -61,9 +61,9 @@ class TickSpreadAPI:
         
     def create_order_sync(self, client_order_id, amount, price, leverage, symbol, side, type):
     
-        order = {"client_order_id": client_order_id, "amount": amount, "price": price, "leverage": leverage, "symbol": symbol, "side": side, "type": type}
+        order = {"client_order_id": client_order_id, "amount": amount, "price": price, "leverage": leverage, "market": symbol, "side": side, "type": type}
         
-        url = '%s/v1/orders' % self.http_host
+        url = '%s/v2/orders' % self.http_host
         try:
             self.logger.info(order)
             r = requests.post(url, headers={"authorization": (
@@ -100,11 +100,13 @@ class TickSpreadAPI:
             #print("%f: ASYNC NEW END" % time.time())
             return "OK"
 
-    def delete_order_sync(self, client_order_id):
-        url = '%s/v1/orders/%s' % (self.http_host, client_order_id)
+    def delete_order_sync(self, client_order_id, symbol="BTC-PERP"):
+        url = '%s/v2/orders' % (self.http_host)
         r = None
+
+        order = {"client_order_id": client_order_id, "market": symbol}
         try:
-            r = requests.delete(url, headers={"authorization": ("Bearer %s" % self.token)}, timeout=5.0)
+            r = requests.delete(url, headers={"authorization": ("Bearer %s" % self.token)}, json=order, timeout=5.0)
             json_response = json.loads(r.text)
         except Exception as e:
             if (r): self.logger.error(r.text)
