@@ -83,11 +83,11 @@ class TickSpreadAPI:
         
         return client_order_id
 
-    def create_order(self, *, client_order_id=0, amount, price, leverage, symbol="BTC-PERP", side, type="limit", async=False):
+    def create_order(self, *, client_order_id=0, amount, price, leverage, symbol="BTC-PERP", side, type="limit", asynchronous=False):
         if (client_order_id == 0):
             client_order_id = self.next_id
             self.next_id += 1
-        if (async==False):    
+        if (asynchronous==False):    
             return self.create_order_sync(client_order_id,amount,price,leverage,symbol,side,type)
         else:
             #print("%f: ASYNC NEW" % time.time())
@@ -115,8 +115,8 @@ class TickSpreadAPI:
             sys.exit(1)
         return json_response
 
-    def delete_order(self, client_order_id, async=False):
-        if (async==False):
+    def delete_order(self, client_order_id, asynchronous=False):
+        if (asynchronous==False):
             return self.delete_order_sync(client_order_id)
         else:
             loop = asyncio.get_event_loop()

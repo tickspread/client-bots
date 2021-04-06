@@ -295,7 +295,7 @@ class MarketMaker:
                                   leverage=self.leverage,
                                   symbol=self.symbol,
                                   side=side_to_str(order.side),
-                                  async=True)
+                                  asynchronous=True)
 
     def send_cancel(self, order):
         if (time.time() - order.last_send_time < 0.030):
@@ -307,7 +307,7 @@ class MarketMaker:
                 order.side), order.amount_left, order.price, order.clordid))
         if (self.real):
             self.register_cancel(order)
-            self.api.delete_order(order.clordid,async=True)
+            self.api.delete_order(order.clordid,asynchronous=True)
 
     def register_new(self, order, clordid, amount, price):
         assert (order.state == OrderState.EMPTY)
