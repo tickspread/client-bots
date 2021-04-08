@@ -463,6 +463,7 @@ class MarketMaker:
         self.asks.maybe_cancel_bottom_orders()
 
     def tickspread_callback(self, data):
+        print(data)
         if (not 'event' in data):
             logging.warning("No 'event' in TickSpread message")
             return
@@ -520,7 +521,7 @@ class MarketMaker:
             print("UNKNOWN EVENT: %s" % event)
             print(data)
 
-    def ftx_callback(self, data):
+    def common_callback(self, data):
         new_price = None
         if ("p" in data):
             new_price = float(data["p"])
@@ -535,7 +536,13 @@ class MarketMaker:
             self.fair_price = new_price
             self.spread = 0.00002
             self.update_orders()
-
+    
+    def ftx_callback(self, data):
+        self.common_callback(data)
+    
+    def binance_s_callback(self, data):
+        self.common_callback(data)
+    
     def callback(self, source, raw_data):
         logging.info("<-%-10s: %s", source, raw_data)
 
@@ -544,13 +551,14 @@ class MarketMaker:
             self.tickspread_callback(data)
         elif (source == 'ftx'):
             self.ftx_callback(data)
-
+        elif (source == 'binance-s'):
+            self.binance_s_callback(data)
 
 async def main():
     api = TickSpreadAPI()
     print("REGISTER")
     api.register("maker@tickspread.com", "maker")
-    time.sleep(3.0)
+    time.sleep(0.3)
     print("STARTING")
     login_status = api.login("maker@tickspread.com", "maker")
     if (not login_status):
@@ -561,32 +569,32 @@ async def main():
     mmaker = MarketMaker(api, tick_jump=5, orders_per_side=10)
 
     #bybit_api = ByBitAPI()
-    ftx_api = FTXAPI()
-    #binance_api = BinanceAPI()
+    #ftx_api = FTXAPI()
+    binance_api = BinanceAPI()
     #bitmex_api = BitMEXAPI()
     #huobi_api = HuobiAPI()
 
     await api.connect()
     # await api.subscribe("market_data", {"symbol": "BTC-PERP"})
-    await api.subscribe("user_data_v2", {"symbol": "BTC-PERP"})
+    await api.subscribe("user_data", {"symbol": "BTC-PERP"})
     api.on_message(mmaker.callback)
 
     #await bybit_api.connect()
     #await bybit_api.subscribe()
     #bybit_api.on_message(mmaker.callback)
 
-    #await binance_api.connect()
+    await binance_api.connect()
     #await binance_api.subscribe_spot(["btcusdt@trade"])
     #await binance_api.subscribe_usdt_futures(["btcusdt@trade"])
     #await binance_api.subscribe_coin_futures(["btcusd_perp@trade"])
-    #binance_api.on_message(mmaker.callback)
+    binance_api.on_message(mmaker.callback)
 
-    await ftx_api.connect()
+    #await ftx_api.connect()
     #await ftx_api.subscribe('ticker')
     #await ftx_api.subscribe('orderbook')
-    await ftx_api.subscribe('trades')
+    #await ftx_api.subscribe('trades')
     #logging.info("Done")
-    ftx_api.on_message(mmaker.callback)
+    #ftx_api.on_message(mmaker.callback)
 
     #await bitmex_api.connect()
     #bitmex_api.on_message(mmaker.callback)

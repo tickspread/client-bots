@@ -11,18 +11,23 @@ parser.add_argument('--group_id', dest='group_id', default="utils-consumer-gid",
 
 parser.add_argument('--host', dest='host', default="localhost",
                     help='set the host that will consume from (default: utils-consumer-gid)')
+
+parser.add_argument('--start', dest='start', default="earliest",
+                            help='set the offset that will consume from (default: earliest)')
+
 args = parser.parse_args()
 
 topic = args.topic
 group_id = args.group_id
 host = args.host
+start = args.start
 
 print(topic)
 c = Consumer({
 #    'bootstrap.servers': '10.10.2.46:9092',
     'bootstrap.servers': '%s:9092' % host,
     'group.id': group_id,
-    'auto.offset.reset': 'earliest',
+    'auto.offset.reset': start,
     'enable.auto.commit': 'false'
 })
 

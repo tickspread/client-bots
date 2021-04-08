@@ -60,7 +60,7 @@ class TickSpreadAPI:
         return self.next_id
         
     def create_order_sync(self, client_order_id, amount, price, leverage, symbol, side, type):
-    
+
         order = {"client_order_id": client_order_id, "amount": amount, "price": price, "leverage": leverage, "market": symbol, "side": side, "type": type}
         
         url = '%s/v2/orders' % self.http_host
@@ -68,15 +68,18 @@ class TickSpreadAPI:
             self.logger.info(order)
             r = requests.post(url, headers={"authorization": (
                 "Bearer %s" % self.token)}, json=order, timeout=5.0)
-        
         except Exception as e:
+            print(e, flush=True)
             self.logger.error(e)
             logging.shutdown()
             sys.exit(1)
         
         try:
-            client_order_id = json.loads(r.text)['client_order_id']
-        except:
+            text_json = json.loads(r.text)
+            client_order_id = text_json["client_order_id"]
+        except Exception as e:
+            print(r.text)
+            print(e, flush=True)
             self.logger.error(r.text[:500])
             logging.shutdown()
             sys.exit(1)
