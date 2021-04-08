@@ -1,3 +1,4 @@
+import gzip
 import requests
 import json
 import asyncio
@@ -9,6 +10,11 @@ import numpy as np
 import math
 import sys
 
+import queue
+
+from binance.client import Client
+from binance.websockets import BinanceSocketManager
+
 
 class FTXAPI:
     def __init__(self, logger=logging.getLogger()):
@@ -16,7 +22,7 @@ class FTXAPI:
         self.logger = logger
         self.callbacks = []
         self.last_ping = 0
-    
+
     async def connect(self):
         self.websocket = await websockets.connect(self.host, ping_interval=None)
         asyncio.get_event_loop().create_task(self.loop(self.websocket))
@@ -34,7 +40,7 @@ class FTXAPI:
             #message = json.loads(message)
             for callback in self.callbacks:
                 callback("ftx", message)
-            #print("Debug")
+            # print("Debug")
             '''
             if (time.time() - self.last_ping > 10.0):
                 ping = json_dumps({'op': 'ping'})
@@ -43,12 +49,13 @@ class FTXAPI:
                 self.last_ping = time.time()
             '''
 
+
 class BitMEXAPI:
     def __init__(self, logger=logging.getLogger()):
         self.host = "wss://www.bitmex.com/realtime?subscribe=trade:XBTUSD"
         self.logger = logger
         self.callbacks = []
-    
+
     async def connect(self):
         self.websocket = await websockets.connect(self.host)
         asyncio.get_event_loop().create_task(self.loop(self.websocket))
@@ -67,12 +74,13 @@ class BitMEXAPI:
             for callback in self.callbacks:
                 callback("bitmex", message)
 
+
 class ByBitAPI:
     def __init__(self, logger=logging.getLogger()):
         self.host = "wss://stream.bybit.com/realtime"
         self.logger = logger
         self.callbacks = []
-    
+
     async def connect(self):
         self.websocket = await websockets.connect(self.host)
         asyncio.get_event_loop().create_task(self.loop(self.websocket))
@@ -91,9 +99,6 @@ class ByBitAPI:
             for callback in self.callbacks:
                 callback("bybit", message)
 
-            
-
-import gzip
 
 class HuobiAPI:
     def __init__(self, logger=logging.getLogger()):
@@ -104,7 +109,7 @@ class HuobiAPI:
     async def connect(self):
         self.websocket = await websockets.connect(self.host)
         asyncio.get_event_loop().create_task(self.loop(self.websocket))
-    
+
     async def subscribe(self):
         data = {"sub": "market.BTC-USD.trade.detail"}
         print("huobi subscribing", json.dumps(data))
@@ -124,7 +129,7 @@ class HuobiAPI:
                 await websocket.send(json.dumps(pong_msg))
                 #print(f"send: {pong_msg}")
                 continue
-            if "ping" in data: 
+            if "ping" in data:
                 pong_msg = {"pong": data.get("ping")}
                 await websocket.send(json.dumps(pong_msg))
                 #print(f"send: {pong_msg}")
@@ -133,47 +138,48 @@ class HuobiAPI:
             for callback in self.callbacks:
                 callback("huobi", raw_data)
 
+
 class BinanceAPI:
-    def __init__(self, logger=logging.getLogger()):
-        self.spot_url = "wss://stream.binance.com:9443/ws/btcusdt@trade"
-        self.usdt_futures_url = "wss://fstream.binance.com/ws/"
-        self.coin_futures_url = "wss://dstream.binance.com/ws/"
+    def __init__(self, logger=logging.getLogger(), api_key=None, api_secret=None):
+
+        self.client = Client(api_key, api_secret)
+        self.bm = BinanceSocketManager(self.client)
         self.logger = logger
         self.callbacks = []
+        self.event_loop = asyncio.get_event_loop()
 
-    async def connect(self):
-        self.websocket_spot = await websockets.connect(self.spot_url)
-        self.websocket_usdt_futures = await websockets.connect(self.usdt_futures_url)
-        self.websocket_coin_futures = await websockets.connect(self.coin_futures_url)
-        asyncio.get_event_loop().create_task(self.loop(self.websocket_spot, "binance-s"))
-        asyncio.get_event_loop().create_task(self.loop(self.websocket_usdt_futures, "binance-f"))
-        asyncio.get_event_loop().create_task(self.loop(self.websocket_coin_futures, "binance-d"))
+        self.queue = asyncio.Queue()
 
-    async def subscribe_spot(self, topics):
-        data = {"method": "SUBSCRIBE", "params": topics, "id": 1}
-        await self.websocket_spot.send(json.dumps(data))
-
-    async def subscribe_usdt_futures(self, topics):
-        data = {"method": "SUBSCRIBE", "params": topics, "id": 1}
-        await self.websocket_usdt_futures.send(json.dumps(data))
-        
-    async def subscribe_coin_futures(self, topics):
-        data = {"method": "SUBSCRIBE", "params": topics, "id": 1}
-        await self.websocket_coin_futures.send(json.dumps(data))
+    def subscribe_futures(self, symbol):
+        self.event_loop.create_task(self.loop())
+        self.bm.start_aggtrade_futures_socket(symbol, self.process_message)
+        self.bm.start()
 
     def on_message(self, callback):
         self.callbacks.append(callback)
-    
-    async def loop(self, websocket, source_name):
+
+    def process_message(self, message):
+        data = message['data']
+        asyncio.run_coroutine_threadsafe(self.queue.put(data), self.event_loop)
+
+    async def loop(self):
         while True:
-            message = await websocket.recv()
-            #message = json.loads(message)
+
+            data = await self.queue.get()
             for callback in self.callbacks:
-                callback(source_name, message)
+                callback('binance', data)
+
+            self.queue.task_done()
+
+    def stop(self):
+
+        self.bm.stop()
+
 
 def test_callback(source, raw_data):
     timestamp = time.time()
     logging.info("%f %-10s: %s" % (timestamp, source, raw_data))
+
 
 async def main():
     bybit_api = ByBitAPI()
@@ -181,28 +187,26 @@ async def main():
     binance_api = BinanceAPI()
     bitmex_api = BitMEXAPI()
     huobi_api = HuobiAPI()
-    
+
     logging.basicConfig(level=logging.INFO, filename="dump.log")
-    
+
     await bybit_api.connect()
     await bybit_api.subscribe()
     bybit_api.on_message(test_callback)
 
-    await binance_api.connect()
-    await binance_api.subscribe_spot(["btcusdt@trade"])
-    await binance_api.subscribe_usdt_futures(["btcusdt@trade"])
-    await binance_api.subscribe_coin_futures(["btcusd_perp@trade"])
+    binance_api.subscribe_futures('BTCUSDT')
     binance_api.on_message(test_callback)
-    
+    binance_api.stop()
+
     await ftx_api.connect()
-    #await ftx_api.subscribe('ticker')
-    #await ftx_api.subscribe('orderbook')
+    # await ftx_api.subscribe('ticker')
+    # await ftx_api.subscribe('orderbook')
     await ftx_api.subscribe('trades')
     ftx_api.on_message(test_callback)
-    
+
     await bitmex_api.connect()
     bitmex_api.on_message(test_callback)
-    
+
     await huobi_api.connect()
     await huobi_api.subscribe()
     huobi_api.on_message(test_callback)

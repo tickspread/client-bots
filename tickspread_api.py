@@ -1,3 +1,6 @@
+import os
+os.environ['PYTHONASYNCIODEBUG'] = '1'
+
 import requests
 import json
 import asyncio
@@ -169,7 +172,7 @@ async def main():
     if (not login_status):
         print("Login failed")
         asyncio.get_event_loop().stop()
-        return 1;
+        return 1
     
     await api.connect()
     await api.subscribe("market_data", {"symbol": "BTC-PERP"})

@@ -34,6 +34,7 @@ import time
 import numpy as np
 import math
 import sys
+import os
 
 from tickspread_api import TickSpreadAPI
 from outside_api import ByBitAPI, FTXAPI, BinanceAPI, BitMEXAPI, HuobiAPI
@@ -42,9 +43,11 @@ logging.basicConfig(level=logging.DEBUG,
                     format='%(asctime)s %(levelname)-8s %(message)s',
                     filename="bot.log")
 
+
 class Side(Enum):
     BID = 1
     ASK = 2
+
 
 def side_to_str(side):
     if (side == Side.BID):
@@ -62,6 +65,7 @@ class OrderState(Enum):
     MAKER = 3
     ACTIVE = 4
 
+
 def order_state_to_str(state):
     if (state == OrderState.EMPTY):
         return "   "
@@ -76,9 +80,11 @@ def order_state_to_str(state):
     else:
         return "bug"
 
+
 class CancelState(Enum):
     NORMAL = 0
     PENDING = 1
+
 
 def order_cancel_to_str(cancel):
     if (cancel == CancelState.NORMAL):
@@ -87,6 +93,7 @@ def order_cancel_to_str(cancel):
         return "x"
     else:
         return "?"
+
 
 class Order:
     def __init__(self, side, logger):
@@ -109,6 +116,7 @@ class Order:
             return "%s %d/%d @ %d (%d) [%s]%s" % (
                 side_to_str(self.side), self.amount_left, self.total_amount,
                 self.price, self.clordid, order_state_to_str(self.state), order_cancel_to_str(self.cancel))
+
 
 class MarketMakerSide:
     def __init__(self, parent, *, side, target_num_orders, max_orders,
@@ -155,7 +163,8 @@ class MarketMakerSide:
             (side_to_str(self.side), self.old_top_order, self.top_order))
 
     def maybe_cancel_top_orders(self):
-        self.parent.logger.debug("maybe_cancel_top_orders: %d" % self.top_price)
+        self.parent.logger.debug(
+            "maybe_cancel_top_orders: %d" % self.top_price)
         if (self.top_order > self.old_top_order):
             orders_to_remove = min(self.top_order - self.old_top_order,
                                    self.target_num_orders)
@@ -177,8 +186,8 @@ class MarketMakerSide:
         price = initial_price
         for i in range(self.target_num_orders):
             self.parent.logger.info("index = %d (%d)",
-                                     self.top_order + i,
-                                     (self.top_order + i) % self.max_orders)
+                                    self.top_order + i,
+                                    (self.top_order + i) % self.max_orders)
             if (self.top_order + i >=
                     self.old_top_order + self.target_num_orders):
                 self.parent.logger.info("breaking at %d",
@@ -193,7 +202,7 @@ class MarketMakerSide:
                     self.available_limit -= size
                     self.parent.send_new(order, size, price)
             if (order.state != OrderState.EMPTY
-                and order.cancel == CancelState.NORMAL):
+                    and order.cancel == CancelState.NORMAL):
                 if (price != order.price):
                     self.parent.send_cancel(order)
             price += price_increment
@@ -244,9 +253,9 @@ class MarketMakerSide:
 
 
 class MarketMaker:
-    def __init__(self, api, *, logger=logging.getLogger(),\
-                    name="bot_example", version="0.0", \
-                    orders_per_side=8, max_position=400, tick_jump=10, order_size=5, leverage=10):
+    def __init__(self, api, *, logger=logging.getLogger(),
+                 name="bot_example", version="0.0",
+                 orders_per_side=8, max_position=400, tick_jump=10, order_size=5, leverage=10):
         # System
         self.api = api
         self.logger = logger
@@ -254,13 +263,13 @@ class MarketMaker:
         self.version = version
 
         # Structure
-        self.bids = MarketMakerSide(self, side=Side.BID, \
+        self.bids = MarketMakerSide(self, side=Side.BID,
                                     target_num_orders=orders_per_side, max_orders=2*orders_per_side,
                                     order_size=order_size, available_limit=max_position, tick_jump=tick_jump)
-        self.asks = MarketMakerSide(self, side=Side.ASK, \
+        self.asks = MarketMakerSide(self, side=Side.ASK,
                                     target_num_orders=orders_per_side, max_orders=2*orders_per_side,
                                     order_size=order_size, available_limit=max_position, tick_jump=tick_jump)
-        
+
         # Market State
         self.last_auction_id = 0
 
@@ -301,13 +310,13 @@ class MarketMaker:
         if (time.time() - order.last_send_time < 0.030):
             logging.info("Cannot cancel order %d, must wait at least 30ms")
             return
-        
+
         logging.info(
             "->CAN %s %d @ %d (%d)" % (side_to_str(
                 order.side), order.amount_left, order.price, order.clordid))
         if (self.real):
             self.register_cancel(order)
-            self.api.delete_order(order.clordid,asynchronous=True)
+            self.api.delete_order(order.clordid, asynchronous=True)
 
     def register_new(self, order, clordid, amount, price):
         assert (order.state == OrderState.EMPTY)
@@ -330,19 +339,20 @@ class MarketMaker:
                 "Received acknowledge, but order %d is in state %s",
                 order.clordid, order_state_to_str(order.state))
         order.state = OrderState.ACKED
-        self.logger.info("Sent: %d, Received: %d", order.auction_id_send, self.last_auction_id)
+        self.logger.info("Sent: %d, Received: %d",
+                         order.auction_id_send, self.last_auction_id)
 
     def exec_maker(self, order):
         if (order.state != OrderState.ACKED and
-            order.state != OrderState.ACTIVE):
+                order.state != OrderState.ACTIVE):
             self.logger.warning(
                 "Received maker_order, but order %d is in state %s",
                 order.clordid, order_state_to_str(order.state))
         order.state = OrderState.MAKER
-    
+
     def exec_active(self, order):
         if (order.state != OrderState.ACKED and
-            order.state != OrderState.MAKER):
+                order.state != OrderState.MAKER):
             self.logger.warning(
                 "Received active_order, but order %d is in state %d",
                 order.clordid, order_state_to_str(order.state))
@@ -363,9 +373,10 @@ class MarketMaker:
         order.amount_left = 0
         order.clordid = None
         order.price = None
-        
-        self.logger.info("Canc: %d, Received: %d", order.auction_id_cancel, self.last_auction_id)
-    
+
+        self.logger.info("Canc: %d, Received: %d",
+                         order.auction_id_cancel, self.last_auction_id)
+
     def find_order_by_clordid(self, clordid):
         for order in self.bids.orders:
             if (order.clordid == clordid):
@@ -438,7 +449,7 @@ class MarketMaker:
             self._trade(order, execution_amount)
         else:
             logging.warning("Order %d received unknwon trade event %s",
-                        order.clordid, event)
+                            order.clordid, event)
 
     def update_orders(self):
         assert (self.active)
@@ -477,10 +488,11 @@ class MarketMaker:
                 logging.warning(
                     "No 'auction_id' in TickSpread %s payload", event)
                 return
-            
+
             auction_id = int(payload['auction_id'])
             if (self.last_auction_id and auction_id != self.last_auction_id + 1):
-                logging.warning("Received auction_id = %d, last was %d", auction_id, self.last_auction_id)
+                logging.warning(
+                    "Received auction_id = %d, last was %d", auction_id, self.last_auction_id)
             self.last_auction_id = auction_id
             logging.info("AUCTION: %d" % auction_id)
             pass
@@ -536,14 +548,36 @@ class MarketMaker:
             self.spread = 0.00002
             self.update_orders()
 
+    def binance_callback(self, data):
+        new_price = None
+        if ("p" in data):
+            new_price = float(data["p"])
+
+        if ("data" in data):
+            for trade_line in data["data"]:
+                if ("price" in trade_line):
+                    new_price = trade_line["price"]
+
+        if (new_price != None):
+            self.active = True
+            self.fair_price = new_price
+            self.spread = 0.00002
+            self.update_orders()
+
     def callback(self, source, raw_data):
         logging.info("<-%-10s: %s", source, raw_data)
 
-        data = json.loads(raw_data)
+        if isinstance(raw_data, dict):
+            data = raw_data
+        else:
+            data = json.loads(raw_data)
+
         if (source == 'tickspread'):
             self.tickspread_callback(data)
         elif (source == 'ftx'):
             self.ftx_callback(data)
+        elif (source == 'binance'):
+            self.binance_callback(data)
 
 
 async def main():
@@ -561,39 +595,38 @@ async def main():
     mmaker = MarketMaker(api, tick_jump=5, orders_per_side=10)
 
     #bybit_api = ByBitAPI()
-    ftx_api = FTXAPI()
-    #binance_api = BinanceAPI()
+    # ftx_api = FTXAPI()
+    binance_api = BinanceAPI(
+        os.getenv('KEY'),
+        os.getenv('SECRET'))
     #bitmex_api = BitMEXAPI()
     #huobi_api = HuobiAPI()
 
     await api.connect()
     # await api.subscribe("market_data", {"symbol": "BTC-PERP"})
-    await api.subscribe("user_data_v2", {"symbol": "BTC-PERP"})
+    await api.subscribe("user_data", {"symbol": "BTC-PERP"})
     api.on_message(mmaker.callback)
 
-    #await bybit_api.connect()
-    #await bybit_api.subscribe()
-    #bybit_api.on_message(mmaker.callback)
+    # await bybit_api.connect()
+    # await bybit_api.subscribe()
+    # bybit_api.on_message(mmaker.callback)
 
-    #await binance_api.connect()
-    #await binance_api.subscribe_spot(["btcusdt@trade"])
-    #await binance_api.subscribe_usdt_futures(["btcusdt@trade"])
-    #await binance_api.subscribe_coin_futures(["btcusd_perp@trade"])
-    #binance_api.on_message(mmaker.callback)
+    # await ftx_api.connect()
+    # await ftx_api.subscribe('ticker')
+    # await ftx_api.subscribe('orderbook')
+    # await ftx_api.subscribe('trades')
+    # logging.info("Done")
+    # ftx_api.on_message(mmaker.callback)
 
-    await ftx_api.connect()
-    #await ftx_api.subscribe('ticker')
-    #await ftx_api.subscribe('orderbook')
-    await ftx_api.subscribe('trades')
-    #logging.info("Done")
-    ftx_api.on_message(mmaker.callback)
+    binance_api.subscribe_futures('BTCUSDT')
+    binance_api.on_message(mmaker.callback)
 
-    #await bitmex_api.connect()
-    #bitmex_api.on_message(mmaker.callback)
+    # await bitmex_api.connect()
+    # bitmex_api.on_message(mmaker.callback)
 
-    #await huobi_api.connect()
-    #await huobi_api.subscribe()
-    #huobi_api.on_message(mmaker.callback)
+    # await huobi_api.connect()
+    # await huobi_api.subscribe()
+    # huobi_api.on_message(mmaker.callback)
     print("FINISH INIT")
 
 
