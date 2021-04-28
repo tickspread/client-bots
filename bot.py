@@ -35,13 +35,21 @@ import numpy as np
 import math
 import sys
 import os
+import argparse
 
 from tickspread_api import TickSpreadAPI
 from outside_api import ByBitAPI, FTXAPI, BinanceAPI, BitMEXAPI, HuobiAPI
 
+parser = argparse.ArgumentParser(description='Run a market maker bot on TickSpread exchange.')
+parser.add_argument('--id', dest='id', default="0",
+                    help='set the id to run the account (default: 0)')
+
+args = parser.parse_args()
+id = args.id
+
 logging.basicConfig(level=logging.DEBUG,
                     format='%(asctime)s %(levelname)-8s %(message)s',
-                    filename="bot.log")
+                    filename='/store/logs/bot_%s.log' % id)
 
 
 class Side(Enum):
@@ -474,7 +482,6 @@ class MarketMaker:
         self.asks.maybe_cancel_bottom_orders()
 
     def tickspread_callback(self, data):
-        print(data)
         if (not 'event' in data):
             logging.warning("No 'event' in TickSpread message")
             return
@@ -573,10 +580,10 @@ class MarketMaker:
 async def main():
     api = TickSpreadAPI()
     print("REGISTER")
-    api.register("maker@tickspread.com", "maker")
+    api.register('maker%s@tickspread.com' % id, "maker")
     time.sleep(0.3)
     print("STARTING")
-    login_status = api.login("maker@tickspread.com", "maker")
+    login_status = api.login('maker%s@tickspread.com' % id, "maker")
     if (not login_status):
         asyncio.get_event_loop().stop()
         print("Login Failure")
