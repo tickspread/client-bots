@@ -164,16 +164,15 @@ class BinanceAPI:
 
     async def loop(self):
         while True:
-
             data = await self.queue.get()
             for callback in self.callbacks:
-                callback('binance', data)
+                callback('binance-s', data)
 
             self.queue.task_done()
 
-    def stop(self):
+    # def stop(self):
 
-        self.bm.stop()
+    #     self.bm.stop()
 
 
 def test_callback(source, raw_data):
