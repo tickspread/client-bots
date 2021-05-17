@@ -12,8 +12,8 @@ import sys
 
 import queue
 
-from binance.client import Client
-from binance.websockets import BinanceSocketManager
+from binance.client import AsyncClient
+from binance import BinanceSocketManager
 
 
 class FTXAPI:
@@ -142,7 +142,7 @@ class HuobiAPI:
 class BinanceAPI:
     def __init__(self, logger=logging.getLogger(), api_key=None, api_secret=None):
 
-        self.client = Client(api_key, api_secret)
+        self.client = AsyncClient(api_key, api_secret)
         self.bm = BinanceSocketManager(self.client)
         self.logger = logger
         self.callbacks = []
@@ -151,9 +151,8 @@ class BinanceAPI:
         self.queue = asyncio.Queue()
 
     def subscribe_futures(self, symbol):
-        self.event_loop.create_task(self.loop())
-        self.bm.start_aggtrade_futures_socket(symbol, self.process_message)
-        self.bm.start()
+        
+        self.event_loop.create_task(self.loop(symbol))
 
     def on_message(self, callback):
         self.callbacks.append(callback)
@@ -162,13 +161,13 @@ class BinanceAPI:
         data = message['data']
         asyncio.run_coroutine_threadsafe(self.queue.put(data), self.event_loop)
 
-    async def loop(self):
-        while True:
-            data = await self.queue.get()
-            for callback in self.callbacks:
-                callback('binance-s', data)
-
-            self.queue.task_done()
+    async def loop(self, symbol):
+        async with self.bm.aggtrade_futures_socket(symbol) as ts:
+            while True:
+                data = await ts.recv() 
+                if data != None:
+                    for callback in self.callbacks:
+                        callback('binance-s', data)
 
     # def stop(self):
 
