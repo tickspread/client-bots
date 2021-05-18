@@ -19,6 +19,8 @@ class TickSpreadAPI:
         #self.host = 'api.tickspread.com'
         self.http_host = 'http://localhost:4000'
         self.ws_host = 'ws://localhost:4000'
+        self.http_host = 'https://api.tickspread.com'
+        self.ws_host = 'wss://api.tickspread.com'
     
     def login(self, username, password):
         payload = {"username": username, "password_hash": password}
