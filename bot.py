@@ -200,13 +200,14 @@ class MarketMakerSide:
             price_increment = +self.tick_jump
         price = initial_price
         for i in range(self.target_num_orders):
+            '''
             self.parent.logger.info("index = %d (%d)",
                                     self.top_order + i,
                                     (self.top_order + i) % self.max_orders)
+            '''
             if (self.top_order + i >=
                     self.old_top_order + self.target_num_orders):
-                self.parent.logger.info("breaking at %d",
-                                        self.top_order + i)
+                #self.parent.logger.info("breaking at %d", self.top_order + i)
                 # Send new orders at the bottom later
                 break
             index = (self.top_order + i) % (self.max_orders)
@@ -606,7 +607,6 @@ class MarketMaker:
         return;
 
     def tickspread_callback(self, data):
-        print("TS")
         if (not 'event' in data):
             logging.warning("No 'event' in TickSpread message")
             return 1
@@ -621,13 +621,12 @@ class MarketMaker:
         payload = data['payload']
         topic = data['topic']
         
-        print(topic, event)
         if (topic == "user_data" and event == "partial"):
             self.tickspread_user_data_partial(payload)
             print("OK_1")
             self.cancel_old_orders()
             print("FINISH_OK")
-            return 1
+            return 0
         
         if (event == "update"):
             if (not 'auction_id' in payload):
@@ -698,6 +697,7 @@ class MarketMaker:
             self.fair_price = new_price
             self.spread = 0.00002
             self.update_orders()
+        return 0
     
     def ftx_callback(self, data):
         return self.common_callback(data)
@@ -720,7 +720,6 @@ class MarketMaker:
             rc = self.ftx_callback(data)
         elif (source == 'binance-s'):
             rc = self.binance_s_callback(data)
-        logging.info("<-callback %d",rc)
         return rc 
 
 async def main():
@@ -739,10 +738,13 @@ async def main():
     mmaker = MarketMaker(api, tick_jump=5, orders_per_side=10)
 
     #bybit_api = ByBitAPI()
-    # ftx_api = FTXAPI()
+    ftx_api = FTXAPI()
+    
+    '''
     binance_api = BinanceAPI(
         os.getenv('BINANCE_KEY'),
         os.getenv('BINANCE_SECRET'))
+    '''
     #bitmex_api = BitMEXAPI()
     #huobi_api = HuobiAPI()
 
@@ -756,14 +758,15 @@ async def main():
     # bybit_api.on_message(mmaker.callback)
 
     # await ftx_api.connect()
-    # await ftx_api.subscribe('ticker')
-    # await ftx_api.subscribe('orderbook')
+    # # await ftx_api.subscribe('ticker')
+    # # await ftx_api.subscribe('orderbook')
     # await ftx_api.subscribe('trades')
-    # logging.info("Done")
+    # # logging.info("Done")
     # ftx_api.on_message(mmaker.callback)
 
-    #binance_api.subscribe_futures('BTCUSDT')
-    #binance_api.on_message(mmaker.callback)
+    binance_api = BinanceAPI()
+    binance_api.subscribe_futures('BTCUSDT')
+    binance_api.on_message(mmaker.callback)
 
     # await bitmex_api.connect()
     # bitmex_api.on_message(mmaker.callback)
