@@ -89,7 +89,7 @@ class TickSpreadAPI:
         
         return client_order_id
 
-    def create_order(self, *, client_order_id=0, amount, price, leverage, symbol="BTC-PERP", side, type="limit", asynchronous=False):
+    def create_order(self, *, client_order_id=0, amount, price, leverage, symbol="testBTC-PERP", side, type="limit", asynchronous=False):
         if (client_order_id == 0):
             client_order_id = self.next_id
             self.next_id += 1
@@ -106,7 +106,7 @@ class TickSpreadAPI:
             #print("%f: ASYNC NEW END" % time.time())
             return "OK"
 
-    def delete_order_sync(self, client_order_id, symbol="BTC-PERP"):
+    def delete_order_sync(self, client_order_id, symbol="testBTC-PERP"):
         url = '%s/v2/orders' % (self.http_host)
         r = None
 
@@ -155,31 +155,33 @@ class TickSpreadAPI:
         self.callbacks.append(callback)
 
     async def loop(self, websocket):
-        while True:
+        rc = 0
+        while rc == 0:
             try:
                 message = await websocket.recv()
             except Exception as e:
                 self.logger.error(e)
                 logging.shutdown()
-                sys.exit(1)       
+                sys.exit(1)
             for callback in self.callbacks:
-                callback('tickspread', message)
+                rc = callback('tickspread', message)
+        asyncio.get_event_loop().stop()  #exit the process
 
 async def main():
     logging.basicConfig(level=logging.INFO, filename="test.log")
     
     api = TickSpreadAPI()
     print(api.register("test@tickspread.com", "tick"))
-    login_status = api.login("test@tickspread.com", "tick")
-        
+    login_status = api.login("matthewericfisher@yahoo.com", "tick")
+    
     if (not login_status):
         print("Login failed")
         asyncio.get_event_loop().stop()
         return 1
     
     await api.connect()
-    await api.subscribe("market_data", {"symbol": "BTC-PERP"})
-    await api.subscribe("user_data", {"symbol": "BTC-PERP"})
+    await api.subscribe("market_data", {"symbol": "testBTC-PERP"})
+    await api.subscribe("user_data", {"symbol": "testBTC-PERP"})
     api.on_message(lambda source, data: logging.info(data))
 
 if __name__ == "__main__":
