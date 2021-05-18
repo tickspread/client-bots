@@ -49,7 +49,7 @@ id = args.id
 
 logging.basicConfig(level=logging.DEBUG,
                     format='%(asctime)s %(levelname)-8s %(message)s',
-                    filename='/store/logs/bot_%s.log' % id)
+                    filename='/home/ubuntu/store/logs/bot_%s.log' % id)
 
 
 class Side(Enum):
@@ -291,7 +291,7 @@ class MarketMaker:
         self.tick_jump = tick_jump
         self.order_size = order_size
         self.leverage = leverage
-        self.symbol = "BTC-PERP"
+        self.symbol = "testBTC-PERP"
 
         # State
         self.real = True
@@ -546,9 +546,12 @@ class MarketMaker:
             new_price = float(data["p"])
 
         if ("data" in data):
-            for trade_line in data["data"]:
-                if ("price" in trade_line):
-                    new_price = trade_line["price"]
+            if ("p" in data["data"]):
+                new_price = float(data["data"]["p"])
+            else:
+                for trade_line in data["data"]:
+                    if ("price" in trade_line):
+                        new_price = trade_line["price"]
 
         if (new_price != None):
             self.active = True
@@ -582,26 +585,27 @@ async def main():
     print("REGISTER")
     api.register('maker%s@tickspread.com' % id, "maker")
     time.sleep(0.3)
-    print("STARTING")
+    print("LOGIN")
     login_status = api.login('maker%s@tickspread.com' % id, "maker")
     if (not login_status):
         asyncio.get_event_loop().stop()
         print("Login Failure")
         return 1
+    print("STARTING")
 
     mmaker = MarketMaker(api, tick_jump=5, orders_per_side=10)
 
     #bybit_api = ByBitAPI()
     # ftx_api = FTXAPI()
     binance_api = BinanceAPI(
-        os.getenv('KEY'),
-        os.getenv('SECRET'))
+        os.getenv('BINANCE_KEY'),
+        os.getenv('BINANCE_SECRET'))
     #bitmex_api = BitMEXAPI()
     #huobi_api = HuobiAPI()
 
     await api.connect()
     # await api.subscribe("market_data", {"symbol": "BTC-PERP"})
-    await api.subscribe("user_data", {"symbol": "BTC-PERP"})
+    await api.subscribe("user_data", {"symbol": "testBTC-PERP"})
     api.on_message(mmaker.callback)
 
     # await bybit_api.connect()
