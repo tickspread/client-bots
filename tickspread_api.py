@@ -1,5 +1,5 @@
 import os
-os.environ['PYTHONASYNCIODEBUG'] = '1'
+#os.environ['PYTHONASYNCIODEBUG'] = '1'
 
 import requests
 import json
