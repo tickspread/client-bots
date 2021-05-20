@@ -386,6 +386,19 @@ class MarketMaker:
         self.logger.info("Sent: %d, Received: %d",
                          order.auction_id_send, self.last_auction_id)
 
+    def exec_reject(self, order):
+        if (order.state != OrderState.PENDING):
+            self.logger.warning(
+                "Received reject, but order %d is in state %s",
+                order.clordid, order_state_to_str(order.state))
+        order.state = OrderState.EMPTY
+        order.cancel = CancelState.NORMAL
+        
+        order.amount_left = 0
+        order.clordid = None
+        order.price = None
+
+
     def exec_maker(self, order):
         if (order.state != OrderState.ACKED and
                 order.state != OrderState.ACTIVE):
@@ -447,6 +460,8 @@ class MarketMaker:
             self.exec_remove(order)
         elif (event == "active_order"):
             self.exec_active(order)
+        elif (event == "reject_order"):
+            self.exec_reject(order)
         else:
             self.logger.warning("Order %d received unknown event %s",
                                 order.clordid, event)
@@ -650,7 +665,8 @@ class MarketMaker:
             logging.info("AUCTION: %d" % auction_id)
             pass
         elif (event == "acknowledge_order" or event == "maker_order"
-              or event == "delete_order" or event == "active_order"):
+              or event == "delete_order" or event == "active_order"
+              or event == "reject_order"):
             if (not 'client_order_id' in payload):
                 logging.warning(
                     "No 'client_order_id' in TickSpread %s payload", event)
@@ -680,6 +696,8 @@ class MarketMaker:
         elif (event == "partial"):
             pass
         elif (event == "update_position"):
+            pass
+        elif (event == "reject_cancel"):
             pass
         else:
             print("UNKNOWN EVENT: %s" % event)
