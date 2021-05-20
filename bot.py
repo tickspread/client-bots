@@ -47,7 +47,7 @@ parser.add_argument('--id', dest='id', default="0",
 args = parser.parse_args()
 id = args.id
 
-logging.basicConfig(level=logging.DEBUG,
+logging.basicConfig(level=logging.INFO,
                     format='%(asctime)s %(levelname)-8s %(message)s',
                     filename='/home/ubuntu/store/logs/bot_%s.log' % id)
 
@@ -321,11 +321,11 @@ class MarketMaker:
         self.spread = None
     
     def log_new(self, side, amount, price, clordid):
-        logging.info("->NEW %s %d @ %d (%d)" %
+        self.logger.info("->NEW %s %d @ %d (%d)" %
             (side_to_str(side), amount, price, clordid))
 
     def log_cancel(self, side, amount_left, price, clordid):
-        logging.info("->CAN %s %d @ %d (%d)" %
+        self.logger.info("->CAN %s %d @ %d (%d)" %
             (side_to_str(side), amount_left, price, clordid))
 
     def send_new(self, order, amount, price):
@@ -347,7 +347,7 @@ class MarketMaker:
 
     def send_cancel(self, order):
         if (time.time() - order.last_send_time < 0.030):
-            logging.info("Cannot cancel order %d, must wait at least 30ms")
+            logging.info("Cannot cancel order %d, must wait at least 30ms" % order.clordid)
             return
         
         self.log_cancel(order.side, order.amount_left, order.price, order.clordid)
@@ -706,7 +706,7 @@ class MarketMaker:
         return self.common_callback(data)
     
     def callback(self, source, raw_data):
-        logging.info("<-%-10s: %s", source, raw_data)
+        self.logger.info("<-%-10s: %s", source, raw_data)
 
         if isinstance(raw_data, dict):
             data = raw_data
@@ -780,7 +780,7 @@ async def main():
 if __name__ == "__main__":
     try:
         loop = asyncio.get_event_loop()
-        loop.set_debug(True)
+        loop.set_debug(False)
         loop.create_task(main())
         loop.run_forever()
     except (Exception, KeyboardInterrupt) as e:
