@@ -143,6 +143,8 @@ class MarketMakerSide:
         self.order_size = order_size
         self.available_limit = available_limit
         self.tick_jump = tick_jump
+        
+        self.last_status_time = 0.0
 
         self.top_order = 0
         self.top_price = None
@@ -191,7 +193,11 @@ class MarketMakerSide:
 
     def recalculate_top_orders(self):
         #self.parent.logger.debug("recalculate_top_orders: %d", self.top_price)
-        #self.debug_orders()
+        
+        current_time = time.time()
+        if (current_time - self.last_status_time > 1.0):
+            self.debug_orders()
+            self.last_status_time = current_time
         
         initial_price = self.top_price
         if (self.side == Side.BID):
@@ -395,7 +401,7 @@ class MarketMaker:
                 "Received active_order, but order %d is in state %d",
                 order.clordid, order_state_to_str(order.state))
         order.state = OrderState.ACTIVE
-
+    
     def exec_remove(self, order):
         if (order.cancel != CancelState.PENDING):
             self.logger.warning("Received unexpected remove_order in id %d",
@@ -432,6 +438,7 @@ class MarketMaker:
             logging.warning("Received exec %s for unknown order: %d",
                             event, clordid)
             return
+        
         if (event == "acknowledge_order"):
             self.exec_ack(order)
         elif (event == "maker_order"):
