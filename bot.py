@@ -481,35 +481,43 @@ class MarketMaker:
             order.total_amount = 0
             order.clordid = None
             order.price = None
+
+
+    def receive_exec_trade(self, event, clordid, execution_amount, side):
+        if (clordid):
+            order = self.find_order_by_clordid(clordid)
+            if (not order):
+                logging.warning("Received exec trade %s for unknown order: %d",
+                                event, clordid)
+            else:
+                if (event == "maker_trade"):
+                    if (order.state != OrderState.MAKER and
+                        order.state != OrderState.ACTIVE):
+                        self.logger.warning(
+                            "Received maker_trade, but order %d is in state %s",
+                            order.clordid, order_state_to_str(order.state))
+                    self._trade(order, execution_amount)
+                elif (event == "taker_trade"):
+                    if (order.state != OrderState.ACKED and
+                        order.state != OrderState.ACTIVE):
+                        self.logger.warning(
+                            "Received taker_trade, but order %d is in state %s",
+                            order.clordid, order_state_to_str(order.state))
+                    self._trade(order, execution_amount)
+                else:
+                    logging.warning("Order %d received unknown trade event %s",
+                                    order.clordid, event)
+        else:
+            print("Received %s event" % event)
+        
         # Update Position
-        if (order.side == Side.BID):
+        if (side == "bid"):
             self.position += execution_amount
             self.asks.available_limit += execution_amount
         else:
+            assert(side == "ask")
             self.position -= execution_amount
             self.bids.available_limit += execution_amount
-
-    def receive_exec_trade(self, event, clordid, execution_amount):
-        order = self.find_order_by_clordid(clordid)
-        if (not order):
-            logging.warning("Received exec trade %s for unknown order: %d",
-                            event, clordid)
-            return
-        if (event == "maker_trade"):
-            if (order.state != OrderState.MAKER):
-                self.logger.warning(
-                    "Received maker_trade, but order %d is in state %s",
-                    order.clordid, order_state_to_str(order.state))
-            self._trade(order, execution_amount)
-        elif (event == "taker_trade"):
-            if (order.state != OrderState.ACKED):
-                self.logger.warning(
-                    "Received taker_trade, but order %d is in state %s",
-                    order.clordid, order_state_to_str(order.state))
-            self._trade(order, execution_amount)
-        else:
-            logging.warning("Order %d received unknwon trade event %s",
-                            order.clordid, event)
 
     def update_orders(self):
         assert (self.active)
@@ -594,7 +602,11 @@ class MarketMaker:
             #total_price = position['total_price']
             
             if (symbol == self.symbol):
+                assert(self.position == 0)
                 self.position = amount
+                self.bids.available_limit -= amount
+                self.asks.available_limit += amount
+                
                 #self.position_total_price = total_price
                 self.position_total_margin = total_margin
                 self.position_funding = funding
@@ -674,19 +686,26 @@ class MarketMaker:
             clordid = int(payload['client_order_id'])
             #print("clordid = %d" % clordid)
             self.receive_exec(event, clordid)
-        elif (event == "taker_trade" or event == "maker_trade"):
+        elif (event == "taker_trade" or event == "maker_trade" or
+              event == "liquidation" or event == "auto_deleverage"):
             if (not 'client_order_id' in payload):
                 logging.warning(
                     "No 'client_order_id' in TickSpread %s payload", event)
-                return 0
+                clordid = 0
+            else:
+                clordid = int(payload['client_order_id'])
+                
             if (not 'execution_amount' in payload):
                 logging.warning(
-                    "No 'execution_amount' in TickSpread %s payloadk", event)
+                    "No 'execution_amount' in TickSpread %s payload", event)
                 return 0
-            clordid = int(payload['client_order_id'])
+            if (not 'side' in payload):
+                logging.warning(
+                    "No 'side' in TickSpread %s payload", event)
+                return 0
             execution_amount = int(payload['execution_amount'])
             #print("clordid = %d, execution_amount = %d" % (clordid, execution_amount))
-            self.receive_exec_trade(event, clordid, execution_amount)
+            self.receive_exec_trade(event, clordid, execution_amount, payload['side'])
         elif (event == "trade"):
             pass
         elif (event == "balance"):
