@@ -737,10 +737,16 @@ class MarketMaker:
                         new_price = trade_line["price"]
 
         if (new_price != None):
-            self.active = True
-            self.fair_price = new_price
-            self.spread = 0.00002
-            self.update_orders()
+            if (not self.active and
+                self.has_user_balance and
+                self.has_old_orders and
+                self.has_user_position):
+                self.active = True
+            
+            if (self.active):
+                self.fair_price = new_price
+                self.spread = 0.00002
+                self.update_orders()
         return 0
     
     def ftx_callback(self, data):
