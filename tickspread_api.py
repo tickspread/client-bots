@@ -135,7 +135,7 @@ class TickSpreadAPI:
             return "OK"
     
     async def connect(self):
-        self.websocket = await websockets.connect("%s/realtime" % self.ws_host, ping_interval=None)
+        self.websocket = await websockets.connect("%s/realtime" % self.ws_host, ping_interval=None, ssl=True)
         asyncio.get_event_loop().create_task(self.loop(self.websocket))
 
     async def subscribe(self, topic, arguments):
@@ -160,7 +160,9 @@ class TickSpreadAPI:
         rc = 0
         while rc == 0:
             try:
+                print("wait")
                 message = await websocket.recv()
+                print("recieved")
             except Exception as e:
                 self.logger.error(e)
                 logging.shutdown()

@@ -47,7 +47,7 @@ parser.add_argument('--id', dest='id', default="0",
 args = parser.parse_args()
 id = args.id
 
-logging.basicConfig(level=logging.INFO,
+logging.basicConfig(level=logging.DEBUG,
                     format='%(asctime)s %(levelname)-8s %(message)s',
                     filename='/home/ubuntu/store/logs/bot_%s.log' % id)
 
@@ -824,7 +824,7 @@ async def main():
     mmaker = MarketMaker(api, tick_jump=5, orders_per_side=10)
 
     #bybit_api = ByBitAPI()
-    ftx_api = FTXAPI()
+    # ftx_api = FTXAPI()
     
     '''
     binance_api = BinanceAPI(
