@@ -13,7 +13,7 @@ import sys
 import queue
 
 from binance.client import AsyncClient
-from binance import BinanceSocketManager
+from binance import BinanceSocketManager, ThreadedWebsocketManager
 
 
 class FTXAPI:
@@ -164,7 +164,9 @@ class BinanceAPI:
     async def loop(self, symbol):
         async with self.bm.aggtrade_futures_socket(symbol) as ts:
             while True:
+                print("wait bin")
                 data = await ts.recv() 
+                print("recieved bin")
                 if data != None:
                     for callback in self.callbacks:
                         callback('binance-s', data)
