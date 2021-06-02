@@ -109,6 +109,7 @@ def order_cancel_to_str(cancel):
     else:
         return "?"
 
+MAX_CANCEL_RETRIES = 5
 
 class Order:
     def __init__(self, side, logger):
@@ -119,6 +120,7 @@ class Order:
         self.amount_left = 0
         self.state = OrderState.EMPTY
         self.cancel = CancelState.NORMAL
+        self.cancel_retries = 0
         self.auction_id_send = 0
         self.auction_id_cancel = 0
         self.last_send_time = 0.0
@@ -155,8 +157,8 @@ class MarketMakerSide:
     def debug_orders(self):
         for i in range(self.max_orders):
             index = (self.top_order + i) % (self.max_orders)
-            if (self.orders[index].state != OrderState.EMPTY):
-                self.parent.logger.info("%d: %s", index, self.orders[index])
+            #if (self.orders[index].state != OrderState.EMPTY):
+            self.parent.logger.info("%d: %s", index, self.orders[index])
 
     def set_new_price(self, new_price):
         if (self.side == Side.BID):
@@ -192,9 +194,10 @@ class MarketMakerSide:
                     self.parent.send_cancel(order)
 
     def recalculate_top_orders(self):
-        #self.parent.logger.debug("recalculate_top_orders: %d", self.top_price)
-        
         current_time = time.time()
+        self.parent.logger.info("recalculate_top_orders: %d, top = (%d => %d) [time = %f/%f, available = %.2f]", self.top_price,
+            self.old_top_order, self.top_order, current_time, self.last_status_time+1.0, self.available_limit)
+        
         if (current_time - self.last_status_time > 1.0):
             self.debug_orders()
             self.last_status_time = current_time
@@ -206,20 +209,19 @@ class MarketMakerSide:
             price_increment = +self.tick_jump
         price = initial_price
         for i in range(self.target_num_orders):
-            '''
             self.parent.logger.info("index = %d (%d)",
                                     self.top_order + i,
                                     (self.top_order + i) % self.max_orders)
-            '''
             if (self.top_order + i >=
                     self.old_top_order + self.target_num_orders):
-                #self.parent.logger.info("breaking at %d", self.top_order + i)
+                self.parent.logger.info("breaking at %d", self.top_order + i)
                 # Send new orders at the bottom later
                 break
             index = (self.top_order + i) % (self.max_orders)
             order = self.orders[index]
             if (order.state == OrderState.EMPTY):
                 size = min(self.order_size, self.available_limit)
+                self.parent.logger.info("Found empty order %d, will send NEW with size %d", index, size)
                 if (size > 0):
                     self.available_limit -= size
                     self.parent.send_new(order, size, price)
@@ -352,8 +354,8 @@ class MarketMaker:
 
 
     def send_cancel(self, order):
-        if (time.time() - order.last_send_time < 0.030):
-            logging.info("Cannot cancel order %d, must wait at least 30ms" % order.clordid)
+        if (time.time() - order.last_send_time < 0.010):
+            self.logger.info("Cannot cancel order %d, must wait at least 10ms" % order.clordid)
             return
         
         self.log_cancel(order.side, order.amount_left, order.price, order.clordid)
@@ -391,13 +393,39 @@ class MarketMaker:
             self.logger.warning(
                 "Received reject, but order %d is in state %s",
                 order.clordid, order_state_to_str(order.state))
+        if (order.side == Side.BID):
+            self.bids.available_limit += order.amount_left
+        else:
+            self.asks.available_limit += order.amount_left
+        
         order.state = OrderState.EMPTY
         order.cancel = CancelState.NORMAL
+        order.cancel_retries = 0
         
         order.amount_left = 0
         order.clordid = None
         order.price = None
-
+    
+    def exec_cancel_reject(self, order):
+        self.logger.info("Received reject_cancel in order %d", order.clordid)
+        if (order.state != OrderState.PENDING):
+            self.logger.info(
+                "Received reject_cancel for order %d in state %s",
+                order.clordid, order_state_to_str(order.state))
+        if (order.cancel == CancelState.NORMAL):
+            self.logger.warning(
+                "Received reject_cancel, but order %d was not waiting for cancel",
+                order.clordid)
+        order.cancel_retries += 1
+        
+        if (order.cancel_retries >= MAX_CANCEL_RETRIES):
+            self.logger.error("Order %d has been cancelled more than %d times, giving up", order.clordid, MAX_CANCEL_RETRIES)
+            logging.shutdown()
+            sys.exit(1)
+        else:
+            order.cancel = CancelState.NORMAL
+        
+        #TODO send another cancel immediately
 
     def exec_maker(self, order):
         if (order.state != OrderState.ACKED and
@@ -426,6 +454,7 @@ class MarketMaker:
         # Reset order
         order.state = OrderState.EMPTY
         order.cancel = CancelState.NORMAL
+        order.cancel_retries = 0
         order.total_amount = 0
         order.amount_left = 0
         order.clordid = None
@@ -452,6 +481,8 @@ class MarketMaker:
                             event, clordid)
             return
         
+        self.logger.info("Received exec for order %d", order.clordid)
+        
         if (event == "acknowledge_order"):
             self.exec_ack(order)
         elif (event == "maker_order"):
@@ -462,6 +493,8 @@ class MarketMaker:
             self.exec_active(order)
         elif (event == "reject_order"):
             self.exec_reject(order)
+        elif (event == "reject_cancel"):
+            self.exec_cancel_reject(order)
         else:
             self.logger.warning("Order %d received unknown event %s",
                                 order.clordid, event)
@@ -478,6 +511,7 @@ class MarketMaker:
         if (order.amount_left == 0):
             order.state = OrderState.EMPTY
             order.cancel = CancelState.NORMAL
+            order.cancel_retries = 0
             order.total_amount = 0
             order.clordid = None
             order.price = None
@@ -540,7 +574,7 @@ class MarketMaker:
         # When price falls, cancel bottom asks to maintain the desired number of orders. When price rises, cancel bottom bids.
         self.bids.maybe_cancel_bottom_orders()
         self.asks.maybe_cancel_bottom_orders()
-    
+        
     def tickspread_user_data_partial(self, payload):
         print("USER DATA PARTIAL")
         if (not 'balance' in payload):
@@ -655,6 +689,8 @@ class MarketMaker:
         payload = data['payload']
         topic = data['topic']
         
+        self.logger.info("event = %s", event)
+        
         if (topic == "user_data" and event == "partial"):
             self.tickspread_user_data_partial(payload)
             print("OK_1")
@@ -664,23 +700,23 @@ class MarketMaker:
         
         if (event == "update"):
             if (not 'auction_id' in payload):
-                logging.warning(
+                self.logger.warning(
                     "No 'auction_id' in TickSpread %s payload", event)
                 return 0
 
             auction_id = int(payload['auction_id'])
             if (self.last_auction_id and auction_id != self.last_auction_id + 1):
-                logging.warning(
+                self.logger.warning(
                     "Received auction_id = %d, last was %d", auction_id, self.last_auction_id)
                 return 0
             self.last_auction_id = auction_id
-            logging.info("AUCTION: %d" % auction_id)
+            self.logger.info("AUCTION: %d" % auction_id)
             pass
         elif (event == "acknowledge_order" or event == "maker_order"
               or event == "delete_order" or event == "active_order"
-              or event == "reject_order"):
+              or event == "reject_order" or event == "reject_cancel"):
             if (not 'client_order_id' in payload):
-                logging.warning(
+                self.logger.warning(
                     "No 'client_order_id' in TickSpread %s payload", event)
                 return 0
             clordid = int(payload['client_order_id'])
@@ -689,18 +725,18 @@ class MarketMaker:
         elif (event == "taker_trade" or event == "maker_trade" or
               event == "liquidation" or event == "auto_deleverage"):
             if (not 'client_order_id' in payload):
-                logging.warning(
+                self.logger.warning(
                     "No 'client_order_id' in TickSpread %s payload", event)
                 clordid = 0
             else:
                 clordid = int(payload['client_order_id'])
                 
             if (not 'execution_amount' in payload):
-                logging.warning(
+                self.logger.warning(
                     "No 'execution_amount' in TickSpread %s payload", event)
                 return 0
             if (not 'side' in payload):
-                logging.warning(
+                self.logger.warning(
                     "No 'side' in TickSpread %s payload", event)
                 return 0
             execution_amount = int(payload['execution_amount'])
