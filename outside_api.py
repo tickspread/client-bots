@@ -141,7 +141,6 @@ class HuobiAPI:
 
 class BinanceAPI:
     def __init__(self, logger=logging.getLogger(), api_key=None, api_secret=None):
-
         self.client = AsyncClient(api_key, api_secret)
         self.bm = BinanceSocketManager(self.client)
         self.logger = logger
@@ -151,7 +150,6 @@ class BinanceAPI:
         self.queue = asyncio.Queue()
 
     def subscribe_futures(self, symbol):
-        
         self.event_loop.create_task(self.loop(symbol))
 
     def on_message(self, callback):
@@ -164,12 +162,17 @@ class BinanceAPI:
     async def loop(self, symbol):
         async with self.bm.aggtrade_futures_socket(symbol) as ts:
             while True:
-                print("wait bin")
-                data = await ts.recv() 
-                print("recieved bin")
-                if data != None:
-                    for callback in self.callbacks:
-                        callback('binance-s', data)
+                try:
+                    self.logger.info("wait bin")
+                    data = await asyncio.wait_for(ts.recv(), 5000)
+                    self.logger.info("recieved bin")
+                    if data != None:
+                        for callback in self.callbacks:
+                            callback('binance-s', data)
+                except Exception as e:
+                    self.logger.warning("retry binance")
+                    self.subscribe_futures(symbol)
+                    break
 
     # def stop(self):
 
