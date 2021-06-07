@@ -164,7 +164,7 @@ class BinanceAPI:
             while True:
                 try:
                     self.logger.info("wait bin")
-                    data = await asyncio.wait_for(ts.recv(), 5000)
+                    data = await asyncio.wait_for(ts.recv(), 5)
                     self.logger.info("recieved bin")
                     if data != None:
                         for callback in self.callbacks:
@@ -175,7 +175,6 @@ class BinanceAPI:
                     break
 
     # def stop(self):
-
     #     self.bm.stop()
 
 

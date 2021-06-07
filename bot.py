@@ -378,7 +378,21 @@ class MarketMaker:
         assert (order.cancel == CancelState.NORMAL)
         order.cancel = CancelState.PENDING
         order.auction_id_cancel = self.last_auction_id
+    
+    def _delete_order(self, order):
+        if (order.side == Side.BID):
+            self.bids.available_limit += order.amount_left
+        else:
+            self.asks.available_limit += order.amount_left
 
+        order.state = OrderState.EMPTY
+        order.cancel = CancelState.NORMAL
+        order.cancel_retries = 0
+        order.total_amount = 0
+        order.amount_left = 0
+        order.clordid = None
+        order.price = None
+        
     def exec_ack(self, order):
         if (order.state != OrderState.PENDING):
             self.logger.warning(
@@ -393,18 +407,7 @@ class MarketMaker:
             self.logger.warning(
                 "Received reject, but order %d is in state %s",
                 order.clordid, order_state_to_str(order.state))
-        if (order.side == Side.BID):
-            self.bids.available_limit += order.amount_left
-        else:
-            self.asks.available_limit += order.amount_left
-        
-        order.state = OrderState.EMPTY
-        order.cancel = CancelState.NORMAL
-        order.cancel_retries = 0
-        
-        order.amount_left = 0
-        order.clordid = None
-        order.price = None
+        self._delete_order(order)
     
     def exec_cancel_reject(self, order):
         self.logger.info("Received reject_cancel in order %d", order.clordid)
@@ -419,13 +422,16 @@ class MarketMaker:
         order.cancel_retries += 1
         
         if (order.cancel_retries >= MAX_CANCEL_RETRIES):
-            self.logger.error("Order %d has been cancelled more than %d times, giving up", order.clordid, MAX_CANCEL_RETRIES)
-            logging.shutdown()
-            sys.exit(1)
+            if (order.state == OrderState.PENDING):
+                self.logger.warning("Order %d has been cancelled %d times, still pending, assume was never sent")    
+                self._delete_order(order)
+            else:
+                self.logger.error("Order %d has been cancelled more than %d times, giving up", order.clordid, MAX_CANCEL_RETRIES)
+                logging.shutdown()
+                sys.exit(1)
         else:
             order.cancel = CancelState.NORMAL
-        
-        #TODO send another cancel immediately
+            #TODO send another cancel immediately
 
     def exec_maker(self, order):
         if (order.state != OrderState.ACKED and
@@ -447,18 +453,7 @@ class MarketMaker:
         if (order.cancel != CancelState.PENDING):
             self.logger.warning("Received unexpected remove_order in id %d",
                                 order.clordid)
-        if (order.side == Side.BID):
-            self.bids.available_limit += order.amount_left
-        else:
-            self.asks.available_limit += order.amount_left
-        # Reset order
-        order.state = OrderState.EMPTY
-        order.cancel = CancelState.NORMAL
-        order.cancel_retries = 0
-        order.total_amount = 0
-        order.amount_left = 0
-        order.clordid = None
-        order.price = None
+        self._delete_order(order)
 
         self.logger.info("Canc: %d, Received: %d",
                          order.auction_id_cancel, self.last_auction_id)
