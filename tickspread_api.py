@@ -113,7 +113,7 @@ class TickSpreadAPI:
         counter = 0
         r = None
         order = {"client_order_id": client_order_id, "market": symbol}
-        while counter < MAX_RETRIES
+        while counter < MAX_RETRIES:
             try:
                 counter += 1
                 r = requests.delete(url, headers={"authorization": ("Bearer %s" % self.token)}, json=order, timeout=5.0)
