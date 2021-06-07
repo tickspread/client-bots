@@ -821,7 +821,7 @@ async def main():
         return 1
     print("STARTING")
 
-    mmaker = MarketMaker(api, tick_jump=5, orders_per_side=10)
+    mmaker = MarketMaker(api, tick_jump=1, orders_per_side=50)
 
     #bybit_api = ByBitAPI()
     # ftx_api = FTXAPI()
