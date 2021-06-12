@@ -36,6 +36,7 @@ import math
 import sys
 import os
 import argparse
+import logging.handlers
 
 from tickspread_api import TickSpreadAPI
 from outside_api import ByBitAPI, FTXAPI, BinanceAPI, BitMEXAPI, HuobiAPI
@@ -48,9 +49,12 @@ args = parser.parse_args()
 id = args.id
 
 logging.basicConfig(level=logging.DEBUG,
-                    format='%(asctime)s %(levelname)-8s %(message)s',
-                    filename='/home/ubuntu/store/logs/bot_%s.log' % id)
+                    format='%(asctime)s %(levelname)-8s %(message)s')
 
+log_handler = logging.handlers.WatchedFileHandler('/home/ubuntu/store/logs/bot_%s.log' % id)
+logger = logging.getLogger()
+logger.removeHandler(logger.handlers[0])
+logger.addHandler(log_handler)
 
 class Side(Enum):
     BID = 1
@@ -195,8 +199,8 @@ class MarketMakerSide:
 
     def recalculate_top_orders(self):
         current_time = time.time()
-        self.parent.logger.info("recalculate_top_orders: %d, top = (%d => %d) [time = %f/%f, available = %.2f]", self.top_price,
-            self.old_top_order, self.top_order, current_time, self.last_status_time+1.0, self.available_limit)
+        self.parent.logger.info("recalculate_top_orders: %d, top = (%d => %d) %s %d [time = %f/%f, available = %.2f]", self.top_price,
+            self.old_top_order, self.top_order, side_to_str(self.side), self.available_limit, current_time, self.last_status_time+1.0, self.available_limit)
         
         if (current_time - self.last_status_time > 1.0):
             self.debug_orders()
@@ -209,12 +213,14 @@ class MarketMakerSide:
             price_increment = +self.tick_jump
         price = initial_price
         for i in range(self.target_num_orders):
+            '''
             self.parent.logger.info("index = %d (%d)",
                                     self.top_order + i,
                                     (self.top_order + i) % self.max_orders)
+            '''
             if (self.top_order + i >=
                     self.old_top_order + self.target_num_orders):
-                self.parent.logger.info("breaking at %d", self.top_order + i)
+                #self.parent.logger.info("breaking at %d", self.top_order + i)
                 # Send new orders at the bottom later
                 break
             index = (self.top_order + i) % (self.max_orders)
@@ -320,7 +326,8 @@ class MarketMaker:
         self.order_size = order_size
         self.leverage = leverage
         self.symbol = "testBTC-PERP"
-        self.money = "testBTC"
+        self.money = "testBTCe12"
+        self.max_position = max_position
 
         # State
         self.real = True
@@ -549,8 +556,8 @@ class MarketMaker:
             self.bids.available_limit += execution_amount
 
     def update_orders(self):
+        self.logger.info("update_orders")
         assert (self.active)
-
         self.bids.set_new_price(self.fair_price - self.spread)
         self.asks.set_new_price(self.fair_price + self.spread)
 
@@ -755,6 +762,7 @@ class MarketMaker:
         return 0
 
     def common_callback(self, data):
+        #self.logger.info("common_callback")
         new_price = None
         if ("p" in data):
             new_price = float(data["p"])
@@ -766,16 +774,19 @@ class MarketMaker:
                 for trade_line in data["data"]:
                     if ("price" in trade_line):
                         new_price = trade_line["price"]
-
+        #self.logger.info("new_price = %.2f" % new_price)
         if (new_price != None):
             if (not self.active and
                 self.has_user_balance and
                 self.has_old_orders and
                 self.has_user_position):
                 self.active = True
-            
+                self.logger.info("Activating: %d (%d/%d)", self.position, self.bids.available_limit, self.asks.available_limit)
+                
+            #self.logger.info("active = %s" % str(self.active))
             if (self.active):
-                self.fair_price = new_price
+                factor = 1.00 - 0.01 * self.position / self.max_position
+                self.fair_price = new_price * factor
                 self.spread = 0.00002
                 self.update_orders()
         return 0
@@ -816,16 +827,11 @@ async def main():
         return 1
     print("STARTING")
 
-    mmaker = MarketMaker(api, tick_jump=1, orders_per_side=50)
+    mmaker = MarketMaker(api, tick_jump=1, orders_per_side=50, order_size=25, max_position=10000)
 
     #bybit_api = ByBitAPI()
     # ftx_api = FTXAPI()
     
-    '''
-    binance_api = BinanceAPI(
-        os.getenv('BINANCE_KEY'),
-        os.getenv('BINANCE_SECRET'))
-    '''
     #bitmex_api = BitMEXAPI()
     #huobi_api = HuobiAPI()
 
@@ -845,7 +851,9 @@ async def main():
     # # logging.info("Done")
     # ftx_api.on_message(mmaker.callback)
 
-    binance_api = BinanceAPI()
+    binance_api = BinanceAPI(
+        os.getenv('BINANCE_KEY'),
+        os.getenv('BINANCE_SECRET'))
     binance_api.subscribe_futures('BTCUSDT')
     binance_api.on_message(mmaker.callback)
 

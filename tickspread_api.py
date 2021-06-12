@@ -11,6 +11,7 @@ import time
 import sys
 
 
+MAX_RETRIES = 5
 
 class TickSpreadAPI:
     def __init__(self, logger=logging.getLogger()):

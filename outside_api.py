@@ -163,14 +163,17 @@ class BinanceAPI:
         async with self.bm.aggtrade_futures_socket(symbol) as ts:
             while True:
                 try:
-                    self.logger.info("wait bin")
+                    print("wait bin")
+                    # self.logger.info("wait bin")
                     data = await asyncio.wait_for(ts.recv(), 5)
-                    self.logger.info("recieved bin")
+                    print("recieved bin")
+                    # self.logger.info("recieved bin")
                     if data != None:
                         for callback in self.callbacks:
                             callback('binance-s', data)
                 except Exception as e:
-                    self.logger.warning("retry binance")
+                    print("retry binance")
+                    # self.logger.warning("retry binance")
                     self.subscribe_futures(symbol)
                     break
 
