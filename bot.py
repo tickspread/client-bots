@@ -48,7 +48,7 @@ parser.add_argument('--id', dest='id', default="0",
 args = parser.parse_args()
 id = args.id
 
-logging.basicConfig(level=logging.DEBUG,
+logging.basicConfig(level=logging.INFO,
                     format='%(asctime)s %(levelname)-8s %(message)s')
 
 log_handler = logging.handlers.WatchedFileHandler('/home/ubuntu/store/logs/bot_%s.log' % id)
@@ -815,19 +815,19 @@ class MarketMaker:
         return rc 
 
 async def main():
-    api = TickSpreadAPI()
+    api = TickSpreadAPI(id_multiple=1000)
     print("REGISTER")
     api.register('maker%s@tickspread.com' % id, "maker")
     time.sleep(0.3)
     print("LOGIN")
-    login_status = api.login('maker%s@tickspread.com' % id, "maker")
+    login_status = api.login('maker%s@tickspread.com' % id, "x6Lq2XECsFeYMdbX") # CHANGE ID MULTIPLE to 100 above when moving back to maker@tickspread.com
     if (not login_status):
         asyncio.get_event_loop().stop()
         print("Login Failure")
         return 1
     print("STARTING")
 
-    mmaker = MarketMaker(api, tick_jump=1, orders_per_side=50, order_size=25, max_position=10000)
+    mmaker = MarketMaker(api, tick_jump=1, orders_per_side=50, order_size=5, max_position=4000)
 
     #bybit_api = ByBitAPI()
     # ftx_api = FTXAPI()
