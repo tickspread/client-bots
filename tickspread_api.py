@@ -14,8 +14,8 @@ import sys
 MAX_RETRIES = 5
 
 class TickSpreadAPI:
-    def __init__(self, logger=logging.getLogger()):
-        self.next_id = int(time.time()*100)
+    def __init__(self, logger=logging.getLogger(), id_multiple=100):
+        self.next_id = int(time.time()*id_multiple)
         self.logger = logger
         #self.host = 'api.tickspread.com'
         self.http_host = 'http://localhost:4000'
