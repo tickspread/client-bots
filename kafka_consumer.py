@@ -1,5 +1,5 @@
 import sys
-from confluent_kafka import Consumer
+from confluent_kafka import Consumer, TopicPartition
 import argparse
 
 parser = argparse.ArgumentParser(description='Consume messages from Kafka.')
@@ -15,12 +15,16 @@ parser.add_argument('--host', dest='host', default="localhost",
 parser.add_argument('--start', dest='start', default="earliest",
                             help='set the offset that will consume from (default: earliest)')
 
+parser.add_argument('--offset', dest='offset', default=-1,
+                    help='Start reading from an offset in the topic (default: -1 the tail)')
+
 args = parser.parse_args()
 
 topic = args.topic
 group_id = args.group_id
 host = args.host
 start = args.start
+starting_offset = int(args.offset)
 
 print(topic)
 c = Consumer({
@@ -31,7 +35,14 @@ c = Consumer({
     'enable.auto.commit': 'false'
 })
 
-c.subscribe([topic])
+if starting_offset < 0:
+    low, high = c.get_watermark_offsets(TopicPartition(topic, 0), cached=False)
+    print("high", high)
+    starting_offset = high + starting_offset
+    if starting_offset < low:
+        starting_offset = low
+
+c.assign([TopicPartition(topic, 0, offset=starting_offset)])
 
 while True:
     msg = c.poll(1.0)
