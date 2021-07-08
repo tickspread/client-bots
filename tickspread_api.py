@@ -1,5 +1,5 @@
 import os
-os.environ['PYTHONASYNCIODEBUG'] = '1'
+#os.environ['PYTHONASYNCIODEBUG'] = '1'
 
 import requests
 import json
@@ -11,10 +11,11 @@ import time
 import sys
 
 
+MAX_RETRIES = 5
 
 class TickSpreadAPI:
-    def __init__(self, logger=logging.getLogger()):
-        self.next_id = int(time.time()*100)
+    def __init__(self, logger=logging.getLogger(), id_multiple=100):
+        self.next_id = int(time.time()*id_multiple)
         self.logger = logger
         #self.host = 'api.tickspread.com'
         self.http_host = 'http://localhost:4000'
@@ -110,17 +111,21 @@ class TickSpreadAPI:
 
     def delete_order_sync(self, client_order_id, symbol="testBTC-PERP"):
         url = '%s/v2/orders' % (self.http_host)
+        counter = 0
         r = None
-
         order = {"client_order_id": client_order_id, "market": symbol}
-        try:
-            r = requests.delete(url, headers={"authorization": ("Bearer %s" % self.token)}, json=order, timeout=5.0)
-            json_response = json.loads(r.text)
-        except Exception as e:
-            if (r): self.logger.error(r.text)
-            else: self.logger.error(e)
-            logging.shutdown()
-            sys.exit(1)
+        while counter < MAX_RETRIES:
+            try:
+                counter += 1
+                r = requests.delete(url, headers={"authorization": ("Bearer %s" % self.token)}, json=order, timeout=5.0)
+                json_response = json.loads(r.text)
+                if (r.status_code == 200):
+                    break
+            except Exception as e:
+                if (r): self.logger.error(r.text)
+                else: self.logger.error(e)
+                #logging.shutdown()
+                #sys.exit(1)
         return json_response
 
     def delete_order(self, client_order_id, asynchronous=False):
@@ -135,7 +140,7 @@ class TickSpreadAPI:
             return "OK"
     
     async def connect(self):
-        self.websocket = await websockets.connect("%s/realtime" % self.ws_host, ping_interval=None)
+        self.websocket = await websockets.connect("%s/realtime" % self.ws_host, ping_interval=None, ssl=True)
         asyncio.get_event_loop().create_task(self.loop(self.websocket))
 
     async def subscribe(self, topic, arguments):
@@ -160,7 +165,9 @@ class TickSpreadAPI:
         rc = 0
         while rc == 0:
             try:
+                print("wait")
                 message = await websocket.recv()
+                print("recieved")
             except Exception as e:
                 self.logger.error(e)
                 logging.shutdown()
