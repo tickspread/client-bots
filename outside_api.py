@@ -150,6 +150,7 @@ class BinanceAPI:
         self.queue = asyncio.Queue()
 
     def subscribe_futures(self, symbol):
+        print("wait bin")
         self.event_loop.create_task(self.loop(symbol))
 
     def on_message(self, callback):
@@ -160,6 +161,7 @@ class BinanceAPI:
         asyncio.run_coroutine_threadsafe(self.queue.put(data), self.event_loop)
 
     async def loop(self, symbol):
+        print("wait bin")
         async with self.bm.aggtrade_futures_socket(symbol) as ts:
             while True:
                 try:
@@ -173,6 +175,7 @@ class BinanceAPI:
                             callback('binance-s', data)
                 except Exception as e:
                     print("retry binance")
+                    print(e)
                     # self.logger.warning("retry binance")
                     self.subscribe_futures(symbol)
                     break
