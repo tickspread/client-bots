@@ -383,11 +383,6 @@ class MarketMaker:
                                   asynchronous=True)
 
     def send_cancel(self, order):
-        if (time.time() - order.last_send_time < 0.010):
-            self.logger.info(
-                "Cannot cancel order %d, must wait at least 10ms" % order.clordid)
-            return
-
         self.log_cancel(order.side, order.amount_left,
                         order.price, order.clordid)
 
@@ -519,6 +514,8 @@ class MarketMaker:
         elif (event == "maker_order"):
             self.exec_maker(order)
         elif (event == "delete_order"):
+            self.exec_remove(order)
+        elif (event == "abort_create"):
             self.exec_remove(order)
         elif (event == "active_order"):
             self.exec_active(order)
@@ -750,8 +747,9 @@ class MarketMaker:
             self.logger.info("AUCTION: %d" % auction_id)
             pass
         elif (event == "acknowledge_order" or event == "maker_order"
-              or event == "delete_order" or event == "active_order"
-              or event == "reject_order" or event == "reject_cancel"):
+              or event == "delete_order" or event == "abort_create"
+              or event == "active_order" or event == "reject_order"
+              or event == "reject_cancel"):
             if (not 'client_order_id' in payload):
                 self.logger.warning(
                     "No 'client_order_id' in TickSpread %s payload", event)

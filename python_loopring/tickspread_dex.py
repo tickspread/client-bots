@@ -37,7 +37,7 @@ class TickSpreadDex:
         }
 
         self.loopring_rest = LoopringV3Client()
-        self.loopring_rest.connect(self.loopring_exported_account)\
+        self.loopring_rest.connect(self.loopring_exported_account)
         self.url = "http://stag.api.tickspread.com:4000"
         self.api_key = self.loopring_rest.api_key
 
