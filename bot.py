@@ -39,26 +39,41 @@ import argparse
 import logging.handlers
 
 from tickspread_api import TickSpreadAPI
+from python_loopring.tickspread_dex import TickSpreadDex
 from outside_api import ByBitAPI, FTXAPI, BinanceAPI, BitMEXAPI, HuobiAPI
 
-parser = argparse.ArgumentParser(description='Run a market maker bot on TickSpread exchange.')
+parser = argparse.ArgumentParser(
+    description='Run a market maker bot on TickSpread exchange.')
 parser.add_argument('--id', dest='id', default="0",
                     help='set the id to run the account (default: 0)')
+parser.add_argument('--env', dest='env', default="prod",
+                    help='set the env to run the account (default: prod)')
+parser.add_argument('--dex', dest='dex', default="false",
+                    help='set the tyoe of exchange (default: prod)')
+parser.add_argument('--tickspread_password', dest='tickspread_password', default="maker",
+                    help='set the tickspread_password to login (default: maker)')
+
 
 args = parser.parse_args()
 id = args.id
+env = args.env
+dex = True if args.dex == "true" else False
+tickspread_password = args.tickspread_password
 
 logging.basicConfig(level=logging.INFO,
                     format='%(asctime)s %(levelname)-8s %(message)s')
 
-log_handler = logging.handlers.WatchedFileHandler('/home/ubuntu/store/logs/bot_%s.log' % id)
+log_handler = logging.handlers.WatchedFileHandler(
+    '/home/ubuntu/store/logs/bot_%s.log' % id)
 logger = logging.getLogger()
 logger.removeHandler(logger.handlers[0])
 logger.addHandler(log_handler)
 
+
 class Side(Enum):
     BID = 1
     ASK = 2
+
 
 def str_to_side(side):
     if side == "bid":
@@ -67,6 +82,7 @@ def str_to_side(side):
         return Side.ASK
     else:
         return 0
+
 
 def side_to_str(side):
     if (side == Side.BID):
@@ -113,7 +129,9 @@ def order_cancel_to_str(cancel):
     else:
         return "?"
 
+
 MAX_CANCEL_RETRIES = 5
+
 
 class Order:
     def __init__(self, side, logger):
@@ -149,7 +167,7 @@ class MarketMakerSide:
         self.order_size = order_size
         self.available_limit = available_limit
         self.tick_jump = tick_jump
-        
+
         self.last_status_time = 0.0
 
         self.top_order = 0
@@ -161,7 +179,7 @@ class MarketMakerSide:
     def debug_orders(self):
         for i in range(self.max_orders):
             index = (self.top_order + i) % (self.max_orders)
-            #if (self.orders[index].state != OrderState.EMPTY):
+            # if (self.orders[index].state != OrderState.EMPTY):
             self.parent.logger.info("%d: %s", index, self.orders[index])
 
     def set_new_price(self, new_price):
@@ -200,12 +218,12 @@ class MarketMakerSide:
     def recalculate_top_orders(self):
         current_time = time.time()
         self.parent.logger.info("recalculate_top_orders: %d, top = (%d => %d) %s %d [time = %f/%f, available = %.2f]", self.top_price,
-            self.old_top_order, self.top_order, side_to_str(self.side), self.available_limit, current_time, self.last_status_time+1.0, self.available_limit)
-        
+                                self.old_top_order, self.top_order, side_to_str(self.side), self.available_limit, current_time, self.last_status_time+1.0, self.available_limit)
+
         if (current_time - self.last_status_time > 1.0):
             self.debug_orders()
             self.last_status_time = current_time
-        
+
         initial_price = self.top_price
         if (self.side == Side.BID):
             price_increment = -self.tick_jump
@@ -227,7 +245,8 @@ class MarketMakerSide:
             order = self.orders[index]
             if (order.state == OrderState.EMPTY):
                 size = min(self.order_size, self.available_limit)
-                self.parent.logger.info("Found empty order %d, will send NEW with size %d", index, size)
+                self.parent.logger.info(
+                    "Found empty order %d, will send NEW with size %d", index, size)
                 if (size > 0):
                     self.available_limit -= size
                     self.parent.send_new(order, size, price)
@@ -271,7 +290,7 @@ class MarketMakerSide:
     def maybe_cancel_bottom_orders(self):
         self.parent.logger.info("maybe_cancel_bottom_orders: %d",
                                 self.top_price)
-        #self.debug_orders()
+        # self.debug_orders()
 
         for i in range(self.target_num_orders, self.max_orders):
             index = (self.top_order + i) % (self.max_orders)
@@ -302,25 +321,30 @@ class MarketMaker:
 
         # Market State
         self.last_auction_id = 0
-        
+
         # User State
         self.has_user_balance = False
         self.balance_available = 0
         self.balance_frozen = 0
-        
+
         self.has_old_orders = False
         self.old_orders = []
-        
+
         self.has_user_position = False
         self.position = 0
         self.position_total_price = 0
         self.position_total_margin = 0
         self.position_funding = 0
         
+        if dex == True:
+            self.has_user_balance = True
+            self.has_old_orders = True
+            self.has_user_position = True
+
         # PnL
         self.gross_profit = 0
         self.fees_paid = 0
-        
+
         # Parameters
         self.tick_jump = tick_jump
         self.order_size = order_size
@@ -334,20 +358,20 @@ class MarketMaker:
         self.active = False
         self.fair_price = None
         self.spread = None
-    
+
     def log_new(self, side, amount, price, clordid):
         self.logger.info("->NEW %s %d @ %d (%d)" %
-            (side_to_str(side), amount, price, clordid))
+                         (side_to_str(side), amount, price, clordid))
 
     def log_cancel(self, side, amount_left, price, clordid):
         self.logger.info("->CAN %s %d @ %d (%d)" %
-            (side_to_str(side), amount_left, price, clordid))
+                         (side_to_str(side), amount_left, price, clordid))
 
     def send_new(self, order, amount, price):
         clordid = self.api.get_next_clordid()
-        
+
         self.log_new(order.side, amount, price, clordid)
-        
+
         order.last_send_time = time.time()
         if (self.real):
             self.register_new(order, clordid, amount, price)
@@ -357,19 +381,22 @@ class MarketMaker:
                                   symbol=self.symbol,
                                   side=side_to_str(order.side),
                                   asynchronous=True)
-    
-
 
     def send_cancel(self, order):
         if (time.time() - order.last_send_time < 0.010):
-            self.logger.info("Cannot cancel order %d, must wait at least 10ms" % order.clordid)
+            self.logger.info(
+                "Cannot cancel order %d, must wait at least 10ms" % order.clordid)
             return
-        
-        self.log_cancel(order.side, order.amount_left, order.price, order.clordid)
-        
+
+        self.log_cancel(order.side, order.amount_left,
+                        order.price, order.clordid)
+
         if (self.real):
             self.register_cancel(order)
             self.api.delete_order(order.clordid, asynchronous=True)
+        
+        if dex:
+            self._delete_order(order)
 
     def register_new(self, order, clordid, amount, price):
         assert (order.state == OrderState.EMPTY)
@@ -385,7 +412,7 @@ class MarketMaker:
         assert (order.cancel == CancelState.NORMAL)
         order.cancel = CancelState.PENDING
         order.auction_id_cancel = self.last_auction_id
-    
+
     def _delete_order(self, order):
         if (order.side == Side.BID):
             self.bids.available_limit += order.amount_left
@@ -399,7 +426,7 @@ class MarketMaker:
         order.amount_left = 0
         order.clordid = None
         order.price = None
-        
+
     def exec_ack(self, order):
         if (order.state != OrderState.PENDING):
             self.logger.warning(
@@ -415,7 +442,7 @@ class MarketMaker:
                 "Received reject, but order %d is in state %s",
                 order.clordid, order_state_to_str(order.state))
         self._delete_order(order)
-    
+
     def exec_cancel_reject(self, order):
         self.logger.info("Received reject_cancel in order %d", order.clordid)
         if (order.state != OrderState.PENDING):
@@ -427,18 +454,20 @@ class MarketMaker:
                 "Received reject_cancel, but order %d was not waiting for cancel",
                 order.clordid)
         order.cancel_retries += 1
-        
+
         if (order.cancel_retries >= MAX_CANCEL_RETRIES):
             if (order.state == OrderState.PENDING):
-                self.logger.warning("Order %d has been cancelled %d times, still pending, assume was never sent")    
+                self.logger.warning(
+                    "Order %d has been cancelled %d times, still pending, assume was never sent")
                 self._delete_order(order)
             else:
-                self.logger.error("Order %d has been cancelled more than %d times, giving up", order.clordid, MAX_CANCEL_RETRIES)
+                self.logger.error(
+                    "Order %d has been cancelled more than %d times, giving up", order.clordid, MAX_CANCEL_RETRIES)
                 logging.shutdown()
                 sys.exit(1)
         else:
             order.cancel = CancelState.NORMAL
-            #TODO send another cancel immediately
+            # TODO send another cancel immediately
 
     def exec_maker(self, order):
         if (order.state != OrderState.ACKED and
@@ -455,7 +484,7 @@ class MarketMaker:
                 "Received active_order, but order %d is in state %d",
                 order.clordid, order_state_to_str(order.state))
         order.state = OrderState.ACTIVE
-    
+
     def exec_remove(self, order):
         if (order.cancel != CancelState.PENDING):
             self.logger.warning("Received unexpected remove_order in id %d",
@@ -482,9 +511,9 @@ class MarketMaker:
             logging.warning("Received exec %s for unknown order: %d",
                             event, clordid)
             return
-        
+
         self.logger.info("Received exec for order %d", order.clordid)
-        
+
         if (event == "acknowledge_order"):
             self.exec_ack(order)
         elif (event == "maker_order"):
@@ -518,7 +547,6 @@ class MarketMaker:
             order.clordid = None
             order.price = None
 
-
     def receive_exec_trade(self, event, clordid, execution_amount, side):
         if (clordid):
             order = self.find_order_by_clordid(clordid)
@@ -528,14 +556,14 @@ class MarketMaker:
             else:
                 if (event == "maker_trade"):
                     if (order.state != OrderState.MAKER and
-                        order.state != OrderState.ACTIVE):
+                            order.state != OrderState.ACTIVE):
                         self.logger.warning(
                             "Received maker_trade, but order %d is in state %s",
                             order.clordid, order_state_to_str(order.state))
                     self._trade(order, execution_amount)
                 elif (event == "taker_trade"):
                     if (order.state != OrderState.ACKED and
-                        order.state != OrderState.ACTIVE):
+                            order.state != OrderState.ACTIVE):
                         self.logger.warning(
                             "Received taker_trade, but order %d is in state %s",
                             order.clordid, order_state_to_str(order.state))
@@ -545,7 +573,7 @@ class MarketMaker:
                                     order.clordid, event)
         else:
             print("Received %s event" % event)
-        
+
         # Update Position
         if (side == "bid"):
             self.position += execution_amount
@@ -576,84 +604,88 @@ class MarketMaker:
         # When price falls, cancel bottom asks to maintain the desired number of orders. When price rises, cancel bottom bids.
         self.bids.maybe_cancel_bottom_orders()
         self.asks.maybe_cancel_bottom_orders()
-        
+
     def tickspread_user_data_partial(self, payload):
         print("USER DATA PARTIAL")
         if (not 'balance' in payload):
             logging.warning("No balance in user_data partial")
             return
-        
+
         if (not 'orders' in payload):
             logging.warning("No orders in user_data partial")
             return
-        
+
         if (not 'positions' in payload):
             logging.warning("No positions in user_data partial")
             return
-        
+
         balance = payload['balance']
         orders = payload['orders']
         positions = payload['positions']
-        
+
         found_money_balance = False
         for each_balance in balance:
             if (not 'asset' in each_balance or
                 not 'available' in each_balance or
-                not 'frozen' in each_balance):
-                logging.warning("Missing at least one of ['asset', 'available', 'frozen'] in balance element")
+                    not 'frozen' in each_balance):
+                logging.warning(
+                    "Missing at least one of ['asset', 'available', 'frozen'] in balance element")
                 continue
-            
+
             asset = each_balance['asset']
             available = each_balance['available']
             frozen = each_balance['frozen']
-            
+
             if (asset == self.money):
                 self.balance_available = available
                 self.balance_frozen = frozen
                 found_money_balance = True
-    
+
         if (not found_money_balance):
-            logging.warning("Could not find %s balance in partial" % self.money)
+            logging.warning(
+                "Could not find %s balance in partial" % self.money)
             return
         self.has_user_balance = True
-        
+
         self.old_orders = orders
         self.has_old_orders = True
-        
+
         if (self.old_orders):
             print("Found %d old orders" % len(self.old_orders))
-        
+
         found_symbol_position = False
         for position in positions:
             if (not 'symbol' in position or
                 not 'amount' in position or
                 not 'funding' in position or
-                not 'total_margin' in position): # ADD or not 'total_price' in position
-                logging.warning("Missing at least one of ['amount', 'funding', 'total_margin'] in position element")
+                    not 'total_margin' in position):  # ADD or not 'total_price' in position
+                logging.warning(
+                    "Missing at least one of ['amount', 'funding', 'total_margin'] in position element")
                 continue
             symbol = position['symbol']
             amount = position['amount']
             funding = position['funding']
             total_margin = position['total_margin']
             #total_price = position['total_price']
-            
+
             if (symbol == self.symbol):
                 assert(self.position == 0)
                 self.position = amount
                 self.bids.available_limit -= amount
                 self.asks.available_limit += amount
-                
+
                 #self.position_total_price = total_price
                 self.position_total_margin = total_margin
                 self.position_funding = funding
                 found_symbol_position = True
-        
+
         if (not found_symbol_position):
-            logging.warning("Could not find %s position in partial" % self.symbol)
+            logging.warning(
+                "Could not find %s position in partial" % self.symbol)
             return
         self.has_user_position = True
         print("Read user_data partial successfully")
-    
+
     def cancel_old_orders(self):
         print("Old orders:")
         for old_order in self.old_orders:
@@ -661,20 +693,23 @@ class MarketMaker:
             if (not 'client_order_id' in old_order or
                 not 'amount' in old_order or
                 not 'price' in old_order or
-                not 'side' in old_order):
-                logging.warning("Could not find one of ['client_order_id', 'amount', 'side'] in order from partial")
-                return;
+                    not 'side' in old_order):
+                logging.warning(
+                    "Could not find one of ['client_order_id', 'amount', 'side'] in order from partial")
+                return
             client_order_id = old_order['client_order_id']
             amount = old_order['amount']
             price = old_order['price']
             side = old_order['side']
-            
+
             print("To Log Cancel")
-            self.log_cancel(str_to_side(side), amount, price, client_order_id)			# FIXME use left instead of amount
-            
+            # FIXME use left instead of amount
+            self.log_cancel(str_to_side(side), amount, price, client_order_id)
+
             print("After Log Cancel")
-            self.api.delete_order(old_order['client_order_id'], asynchronous=False)
-        return;
+            self.api.delete_order(
+                old_order['client_order_id'], asynchronous=False)
+        return
 
     def tickspread_callback(self, data):
         if (not 'event' in data):
@@ -686,20 +721,20 @@ class MarketMaker:
         if (not 'topic' in data):
             logging.warning("No 'topic' in TickSpread message")
             return 1
-        
+
         event = data['event']
         payload = data['payload']
         topic = data['topic']
-        
+
         self.logger.info("event = %s", event)
-        
+
         if (topic == "user_data" and event == "partial"):
             self.tickspread_user_data_partial(payload)
             print("OK_1")
             self.cancel_old_orders()
             print("FINISH_OK")
             return 0
-        
+
         if (event == "update"):
             if (not 'auction_id' in payload):
                 self.logger.warning(
@@ -732,7 +767,7 @@ class MarketMaker:
                 clordid = 0
             else:
                 clordid = int(payload['client_order_id'])
-                
+
             if (not 'execution_amount' in payload):
                 self.logger.warning(
                     "No 'execution_amount' in TickSpread %s payload", event)
@@ -743,7 +778,8 @@ class MarketMaker:
                 return 0
             execution_amount = int(payload['execution_amount'])
             #print("clordid = %d, execution_amount = %d" % (clordid, execution_amount))
-            self.receive_exec_trade(event, clordid, execution_amount, payload['side'])
+            self.receive_exec_trade(
+                event, clordid, execution_amount, payload['side'])
         elif (event == "trade"):
             pass
         elif (event == "balance"):
@@ -762,7 +798,7 @@ class MarketMaker:
         return 0
 
     def common_callback(self, data):
-        #self.logger.info("common_callback")
+        # self.logger.info("common_callback")
         new_price = None
         if ("p" in data):
             new_price = float(data["p"])
@@ -779,10 +815,11 @@ class MarketMaker:
             if (not self.active and
                 self.has_user_balance and
                 self.has_old_orders and
-                self.has_user_position):
+                    self.has_user_position):
                 self.active = True
-                self.logger.info("Activating: %d (%d/%d)", self.position, self.bids.available_limit, self.asks.available_limit)
-                
+                self.logger.info("Activating: %d (%d/%d)", self.position,
+                                 self.bids.available_limit, self.asks.available_limit)
+
             #self.logger.info("active = %s" % str(self.active))
             if (self.active):
                 factor = 1.00 - 0.01 * self.position / self.max_position
@@ -790,15 +827,16 @@ class MarketMaker:
                 self.spread = 0.00002
                 self.update_orders()
         return 0
-    
+
     def ftx_callback(self, data):
         return self.common_callback(data)
-    
+
     def binance_s_callback(self, data):
         return self.common_callback(data)
-    
+
     def callback(self, source, raw_data):
         self.logger.info("<-%-10s: %s", source, raw_data)
+        print("opa!")
 
         if isinstance(raw_data, dict):
             data = raw_data
@@ -812,33 +850,41 @@ class MarketMaker:
             rc = self.ftx_callback(data)
         elif (source == 'binance-s'):
             rc = self.binance_s_callback(data)
-        return rc 
+        return rc
+
 
 async def main():
-    api = TickSpreadAPI(id_multiple=1000)
-    print("REGISTER")
-    api.register('maker%s@tickspread.com' % id, "maker")
-    time.sleep(0.3)
-    print("LOGIN")
-    login_status = api.login('maker%s@tickspread.com' % id, "x6Lq2XECsFeYMdbX") # CHANGE ID MULTIPLE to 100 above when moving back to maker@tickspread.com
-    if (not login_status):
-        asyncio.get_event_loop().stop()
-        print("Login Failure")
-        return 1
-    print("STARTING")
+    if dex == True:
+        api = TickSpreadDex(id_multiple=1000, env=env)
+        mmaker = MarketMaker(api, tick_jump=0.5, orders_per_side=50,
+                         order_size=0.01, max_position=4000)
+    else:
+        api = TickSpreadAPI(id_multiple=1000, env=env)
+        mmaker = MarketMaker(api, tick_jump=1, orders_per_side=50,
+                         order_size=5, max_position=4000)
+        print("REGISTER")
+        api.register('maker%s@tickspread.com' % id, tickspread_password)
+        time.sleep(0.3)
+        print("LOGIN")
+        # CHANGE ID MULTIPLE to 100 above when moving back to maker@tickspread.com
+        login_status = api.login('maker%s@tickspread.com' %
+                                id, tickspread_password)
+        if (not login_status):
+            asyncio.get_event_loop().stop()
+            print("Login Failure")
+            return 1
+        print("STARTING")
 
-    mmaker = MarketMaker(api, tick_jump=1, orders_per_side=50, order_size=5, max_position=4000)
+        #bybit_api = ByBitAPI()
+        # ftx_api = FTXAPI()
 
-    #bybit_api = ByBitAPI()
-    # ftx_api = FTXAPI()
-    
-    #bitmex_api = BitMEXAPI()
-    #huobi_api = HuobiAPI()
+        #bitmex_api = BitMEXAPI()
+        #huobi_api = HuobiAPI()
 
-    await api.connect()
-    # await api.subscribe("market_data", {"symbol": "testBTC-PERP"})
-    await api.subscribe("user_data", {"symbol": "testBTC-PERP"})
-    api.on_message(mmaker.callback)
+        await api.connect()
+        # await api.subscribe("market_data", {"symbol": "testBTC-PERP"})
+        await api.subscribe("user_data", {"symbol": "testBTC-PERP"})
+        api.on_message(mmaker.callback)
 
     # await bybit_api.connect()
     # await bybit_api.subscribe()
@@ -854,7 +900,11 @@ async def main():
     binance_api = BinanceAPI(
         os.getenv('BINANCE_KEY'),
         os.getenv('BINANCE_SECRET'))
-    binance_api.subscribe_futures('BTCUSDT')
+
+    if dex == True:
+        binance_api.subscribe_futures('ETHUSDT')
+    else:
+        binance_api.subscribe_futures('BTCUSDT')
     binance_api.on_message(mmaker.callback)
 
     # await bitmex_api.connect()
