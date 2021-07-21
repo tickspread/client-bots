@@ -14,14 +14,16 @@ import sys
 MAX_RETRIES = 5
 
 class TickSpreadAPI:
-    def __init__(self, logger=logging.getLogger(), id_multiple=100):
+    def __init__(self, logger=logging.getLogger(), id_multiple=100, env="prod"):
         self.next_id = int(time.time()*id_multiple)
         self.logger = logger
         #self.host = 'api.tickspread.com'
-        self.http_host = 'http://localhost:4000'
-        self.ws_host = 'ws://localhost:4000'
-        self.http_host = 'https://api.tickspread.com'
-        self.ws_host = 'wss://api.tickspread.com'
+        if env == "dev":
+            self.http_host = 'http://localhost:4000'
+            self.ws_host = 'ws://localhost:4000'
+        else:
+            self.http_host = 'https://api.tickspread.com'
+            self.ws_host = 'wss://api.tickspread.com'
     
     def login(self, username, password):
         payload = {"username": username, "password_hash": password}
@@ -140,7 +142,7 @@ class TickSpreadAPI:
             return "OK"
     
     async def connect(self):
-        self.websocket = await websockets.connect("%s/realtime" % self.ws_host, ping_interval=None, ssl=True)
+        self.websocket = await websockets.connect("%s/realtime" % self.ws_host, ping_interval=None)
         asyncio.get_event_loop().create_task(self.loop(self.websocket))
 
     async def subscribe(self, topic, arguments):
