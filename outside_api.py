@@ -28,7 +28,7 @@ class FTXAPI:
         asyncio.get_event_loop().create_task(self.loop(self.websocket))
 
     async def subscribe(self, topic):
-        data = {'op': 'subscribe', 'channel': topic, 'market': 'BTC-PERP'}
+        data = {'op': 'subscribe', 'channel': topic, 'market': 'ETH-PERP'}
         await self.websocket.send(json.dumps(data))
 
     def on_message(self, callback):
@@ -61,7 +61,7 @@ class BitMEXAPI:
         asyncio.get_event_loop().create_task(self.loop(self.websocket))
 
     async def subscribe(self, topic):
-        data = {'op': 'subscribe', 'channel': topic, 'market': 'BTC-PERP'}
+        data = {'op': 'subscribe', 'channel': topic, 'market': 'ETH-PERP'}
         await self.websocket.send(json.dumps(data))
 
     def on_message(self, callback):
@@ -86,7 +86,7 @@ class ByBitAPI:
         asyncio.get_event_loop().create_task(self.loop(self.websocket))
 
     async def subscribe(self):
-        data = {"op": "subscribe", "args": ["trade.BTCUSD"]}
+        data = {"op": "subscribe", "args": ["trade.ETHUSD"]}
         await self.websocket.send(json.dumps(data))
 
     def on_message(self, callback):
@@ -111,7 +111,7 @@ class HuobiAPI:
         asyncio.get_event_loop().create_task(self.loop(self.websocket))
 
     async def subscribe(self):
-        data = {"sub": "market.BTC-USD.trade.detail"}
+        data = {"sub": "market.ETH-USD.trade.detail"}
         print("huobi subscribing", json.dumps(data))
         await self.websocket.send(json.dumps(data))
 
@@ -157,12 +157,13 @@ class BinanceAPI:
         self.callbacks.append(callback)
 
     def process_message(self, message):
-        data = message['data']
+        # data = message['data']
+        data = message
         asyncio.run_coroutine_threadsafe(self.queue.put(data), self.event_loop)
 
     async def loop(self, symbol):
         print("wait bin")
-        async with self.bm.aggtrade_futures_socket(symbol) as ts:
+        async with self.bm.trade_socket(symbol) as ts:
             while True:
                 try:
                     print("wait bin")
@@ -202,7 +203,7 @@ async def main():
     await bybit_api.subscribe()
     bybit_api.on_message(test_callback)
 
-    binance_api.subscribe_futures('BTCUSDT')
+    binance_api.subscribe_futures('ETHUSDT')
     binance_api.on_message(test_callback)
     binance_api.stop()
 

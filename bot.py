@@ -38,8 +38,9 @@ import os
 import argparse
 import logging.handlers
 
+from decimal import Decimal
 from tickspread_api import TickSpreadAPI
-from python_loopring.tickspread_dex import TickSpreadDex
+# from python_loopring.tickspread_dex import TickSpreadDex
 from outside_api import ByBitAPI, FTXAPI, BinanceAPI, BitMEXAPI, HuobiAPI
 
 parser = argparse.ArgumentParser(
@@ -48,6 +49,8 @@ parser.add_argument('--id', dest='id', default="0",
                     help='set the id to run the account (default: 0)')
 parser.add_argument('--env', dest='env', default="prod",
                     help='set the env to run the account (default: prod)')
+parser.add_argument('--log', dest='log', default="shell",
+                    help='set the output for the logs (default: shell)')
 parser.add_argument('--dex', dest='dex', default="false",
                     help='set the tyoe of exchange (default: prod)')
 parser.add_argument('--tickspread_password', dest='tickspread_password', default="maker",
@@ -57,17 +60,18 @@ parser.add_argument('--tickspread_password', dest='tickspread_password', default
 args = parser.parse_args()
 id = args.id
 env = args.env
+log_file = args.log
 dex = True if args.dex == "true" else False
 tickspread_password = args.tickspread_password
 
-logging.basicConfig(level=logging.INFO,
+logging.basicConfig(level=logging.DEBUG,
                     format='%(asctime)s %(levelname)-8s %(message)s')
-
-log_handler = logging.handlers.WatchedFileHandler(
-    '/home/ubuntu/store/logs/bot_%s.log' % id)
-logger = logging.getLogger()
-logger.removeHandler(logger.handlers[0])
-logger.addHandler(log_handler)
+if log_file != "shell":
+    log_handler = logging.handlers.WatchedFileHandler(
+        '/home/ubuntu/store/logs/bot_%s.log' % id)
+    logger = logging.getLogger()
+    logger.removeHandler(logger.handlers[0])
+    # logger.addHandler(log_handler)
 
 
 class Side(Enum):
@@ -184,11 +188,12 @@ class MarketMakerSide:
 
     def set_new_price(self, new_price):
         if (self.side == Side.BID):
-            new_top_price = math.floor(
-                new_price / self.tick_jump) * self.tick_jump
+            new_top_price = Decimal(math.floor(
+                new_price / self.tick_jump) * self.tick_jump)
+            print("BID", new_price, new_top_price)
         else:
-            new_top_price = math.ceil(
-                new_price / self.tick_jump) * self.tick_jump
+            new_top_price = Decimal(math.ceil(
+                new_price / self.tick_jump) * self.tick_jump)
         self.old_top_price = self.top_price
         self.top_price = new_top_price
         self.old_top_order = self.top_order
@@ -349,8 +354,8 @@ class MarketMaker:
         self.tick_jump = tick_jump
         self.order_size = order_size
         self.leverage = leverage
-        self.symbol = "testBTC-PERP"
-        self.money = "testBTCe12"
+        self.symbol = "ETH-PERP"
+        self.money = "USDC"
         self.max_position = max_position
 
         # State
@@ -360,11 +365,11 @@ class MarketMaker:
         self.spread = None
 
     def log_new(self, side, amount, price, clordid):
-        self.logger.info("->NEW %s %d @ %d (%d)" %
+        self.logger.info("->NEW %s %s @ %s (%d)" %
                          (side_to_str(side), amount, price, clordid))
 
     def log_cancel(self, side, amount_left, price, clordid):
-        self.logger.info("->CAN %s %d @ %d (%d)" %
+        self.logger.info("->CAN %s %s @ %s (%d)" %
                          (side_to_str(side), amount_left, price, clordid))
 
     def send_new(self, order, amount, price):
@@ -630,8 +635,8 @@ class MarketMaker:
                 continue
 
             asset = each_balance['asset']
-            available = each_balance['available']
-            frozen = each_balance['frozen']
+            available = Decimal(each_balance['available'])
+            frozen = Decimal(each_balance['frozen'])
 
             if (asset == self.money):
                 self.balance_available = available
@@ -660,9 +665,9 @@ class MarketMaker:
                     "Missing at least one of ['amount', 'funding', 'total_margin'] in position element")
                 continue
             symbol = position['symbol']
-            amount = position['amount']
-            funding = position['funding']
-            total_margin = position['total_margin']
+            amount = Decimal(position['amount'])
+            funding = Decimal(position['funding'])
+            total_margin = Decimal(position['total_margin'])
             #total_price = position['total_price']
 
             if (symbol == self.symbol):
@@ -799,15 +804,15 @@ class MarketMaker:
         # self.logger.info("common_callback")
         new_price = None
         if ("p" in data):
-            new_price = float(data["p"])
+            new_price = Decimal(data["p"])
 
         if ("data" in data):
             if ("p" in data["data"]):
-                new_price = float(data["data"]["p"])
+                new_price = Decimal(data["data"]["p"])
             else:
                 for trade_line in data["data"]:
                     if ("price" in trade_line):
-                        new_price = trade_line["price"]
+                        new_price = Decimal(trade_line["price"])
         #self.logger.info("new_price = %.2f" % new_price)
         if (new_price != None):
             if (not self.active and
@@ -820,9 +825,9 @@ class MarketMaker:
 
             #self.logger.info("active = %s" % str(self.active))
             if (self.active):
-                factor = 1.00 - 0.01 * self.position / self.max_position
-                self.fair_price = new_price * factor
-                self.spread = 0.00002
+                factor = Decimal(1) - Decimal(0.01) * self.position / self.max_position
+                self.fair_price = new_price * Decimal(factor)
+                self.spread = Decimal(0.00002)
                 self.update_orders()
         return 0
 
@@ -834,7 +839,6 @@ class MarketMaker:
 
     def callback(self, source, raw_data):
         self.logger.info("<-%-10s: %s", source, raw_data)
-        print("opa!")
 
         if isinstance(raw_data, dict):
             data = raw_data
@@ -853,13 +857,14 @@ class MarketMaker:
 
 async def main():
     if dex == True:
-        api = TickSpreadDex(id_multiple=1000, env=env)
-        mmaker = MarketMaker(api, tick_jump=0.5, orders_per_side=50,
-                         order_size=0.01, max_position=4000)
+        # api = TickSpreadDex(id_multiple=1000, env=env)
+        # mmaker = MarketMaker(api, tick_jump=0.5, orders_per_side=50,
+        #                  order_size=0.01, max_position=4000)
+        pass
     else:
         api = TickSpreadAPI(id_multiple=1000, env=env)
-        mmaker = MarketMaker(api, tick_jump=1, orders_per_side=50,
-                         order_size=5, max_position=4000)
+        mmaker = MarketMaker(api, tick_jump=Decimal("0.1"), orders_per_side=50,
+                         order_size=Decimal("0.05"), max_position=Decimal("10.0"))
         print("REGISTER")
         api.register('maker%s@tickspread.com' % id, tickspread_password)
         time.sleep(0.3)
@@ -874,36 +879,38 @@ async def main():
         print("STARTING")
 
         #bybit_api = ByBitAPI()
-        # ftx_api = FTXAPI()
+        ftx_api = FTXAPI()
 
         #bitmex_api = BitMEXAPI()
         #huobi_api = HuobiAPI()
 
         await api.connect()
-        # await api.subscribe("market_data", {"symbol": "testBTC-PERP"})
-        await api.subscribe("user_data", {"symbol": "testBTC-PERP"})
+        # await api.subscribe("market_data", {"symbol": "ETH-PERP"})
+        await api.subscribe("user_data", {"symbol": "ETH-PERP"})
         api.on_message(mmaker.callback)
 
     # await bybit_api.connect()
     # await bybit_api.subscribe()
     # bybit_api.on_message(mmaker.callback)
 
-    # await ftx_api.connect()
-    # # await ftx_api.subscribe('ticker')
-    # # await ftx_api.subscribe('orderbook')
-    # await ftx_api.subscribe('trades')
+    ftx_api = FTXAPI()
+    ftx_api.on_message(mmaker.callback)
+    await ftx_api.connect()
+    # await ftx_api.subscribe('ticker')
+    # await ftx_api.subscribe('orderbook')
+    await ftx_api.subscribe('trades')
     # # logging.info("Done")
     # ftx_api.on_message(mmaker.callback)
 
-    binance_api = BinanceAPI(
-        os.getenv('BINANCE_KEY'),
-        os.getenv('BINANCE_SECRET'))
+    # binance_api = BinanceAPI(
+    #     os.getenv('BINANCE_KEY'),
+    #     os.getenv('BINANCE_SECRET'))
 
-    if dex == True:
-        binance_api.subscribe_futures('ETHUSDT')
-    else:
-        binance_api.subscribe_futures('BTCUSDT')
-    binance_api.on_message(mmaker.callback)
+    # if dex == True:
+    #     binance_api.subscribe_futures('ETHUSDT')
+    # else:
+    #     binance_api.subscribe_futures('ETHUSDT')
+    # binance_api.on_message(mmaker.callback)
 
     # await bitmex_api.connect()
     # bitmex_api.on_message(mmaker.callback)
