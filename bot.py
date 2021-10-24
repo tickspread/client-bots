@@ -779,7 +779,7 @@ class MarketMaker:
                 self.logger.warning(
                     "No 'side' in TickSpread %s payload", event)
                 return 0
-            execution_amount = int(payload['execution_amount'])
+            execution_amount = Decimal(payload['execution_amount'])
             #print("clordid = %d, execution_amount = %d" % (clordid, execution_amount))
             self.receive_exec_trade(
                 event, clordid, execution_amount, payload['side'])
