@@ -1,5 +1,10 @@
 import multiprocessing as mp
 import time
+from datetime import datetime, timedelta
+from tickspread_api import TickSpreadAPI
+from collections import defaultdict
+from session_utils import sessionIdGen
+
 
 def orderMonitor(queue, makeReader, readerArgs, sleepInterval=0.01):
     orderReader = makeReader(*readerArgs)
@@ -17,10 +22,16 @@ def makeExecutionProcessPool(n_processes=8):
     p.start()
     return p
 
-def makeOrderExecutor(*args):
-    # initialize
-    def f():
-        ...
+def makeOrderExecutor(tsLogin, tsPassword, env):
+    tickSpreadAPI = TickSpreadAPI(env=env)
+    loginResult = tickSpreadAPI.login(tsLogin, tsPassword)
+    assert loginResult, f"did not login successfully for {tsLogin=}, {tsPassword=}"
+    idGen = sessionIdGen(tsLogin) 
+    def f(amount, price, leverage, symbol, side, type):
+        client_order_id = next(idGen)
+        orderPlacementResult = tickSpreadAPI.create_order_sync(client_order_id, amount, price, leverage, symbol, side, type)
+        assert orderPlacementResult == client_order_id, f"mismatch between {orderPlacementResult=} and {client_order_id=}"
+        return orderPlacementResult
     return f
 
 def makeOrderCanceller(*args):

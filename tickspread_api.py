@@ -14,13 +14,16 @@ import sys
 MAX_RETRIES = 5
 
 class TickSpreadAPI:
-    def __init__(self, logger=logging.getLogger(), id_multiple=100, env="prod"):
+    def __init__(self, logger=logging.getLogger(), id_multiple=100, env="staging"):
         self.next_id = int(time.time()*id_multiple)
         self.logger = logger
         #self.host = 'api.tickspread.com'
         if env == "dev":
             self.http_host = 'http://localhost:4000'
             self.ws_host = 'ws://localhost:4000'
+        elif env == "staging":
+            self.http_host = "http://stag.api.tickspread.com"
+            self.ws_host = "ws://stag.api.tickspread.com"
         else:
             self.http_host = 'https://api.tickspread.com'
             self.ws_host = 'wss://api.tickspread.com'

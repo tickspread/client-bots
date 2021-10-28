@@ -2,3 +2,5 @@ DEADJOE
 __pycache__/
 *~
 *.log
+*.swp
+
