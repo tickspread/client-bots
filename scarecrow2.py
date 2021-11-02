@@ -28,9 +28,9 @@ def createUserDataWatcher(queue, initDetais):
         ...
     return userDataWatcher
 
-def createDecisionMaker(exchangeQueue, userDataQueue, orderQueue, orderResponseQueue, wait_time=0.01, maxIncidentCount=3, incidentWindow=timedelta(minutes=5)):
+def createDecisionMaker(exchangeQueue, userDataQueue, orderQueue, orderResponseQueue, userLogin, wait_time=0.01, maxIncidentCount=3, incidentWindow=timedelta(minutes=5)):
     ...
-    def decisionMaker(login):
+    def decisionMaker():
         def readFromQueue(q, timeout=wait_time):
             try:
                 block = timeout > 0 
@@ -40,7 +40,7 @@ def createDecisionMaker(exchangeQueue, userDataQueue, orderQueue, orderResponseQ
 
         orderIds = defaultdict(sessionIdGen)
         orderState = {}
-        incidentTally = TimeWindow(timewindow=incidentWindow)
+        incidentTally = TimeWindow(timewindow=incidentWindow, logFunction=logging.error)
 
         def initiateShutdown():
             ...
@@ -49,20 +49,18 @@ def createDecisionMaker(exchangeQueue, userDataQueue, orderQueue, orderResponseQ
             exchOrder = readFromQueue(exchangeQueue, timeout=0)
             userData  = readFromQueue(userDataQueue, timeout=0)
             if ...:
-                orderId = next(orderIds[login])
-                tsOrder = ExecuteOrder(login=login, orderId=orderId)
+                orderId = next(orderIds[userLogin])
+                tsOrder = ExecuteOrder(login=userLogin, orderId=orderId)
                 orderQueue.put(tsOrder)
-            someUserDataUpdate = readFromQueue(userDataQueue, timeout=0)
-            if someUserDataUpdate.good():
-                pass
-            else:
-                cancelOrder = CancelOrder(login=someUserDataUpdate.login, orderId=someOrderResponse.orderId)
-                orderQueue.put(cancelOrder)
-            if (someOrderResponse := readFromQueue(orderResponseQueue)) is not None:
-                logging.error(msg := someOrderResponse.message)
+            while (someUserDataUpdate := readFromQueue(userDataQueue, timeout=0)) is not None:
+                assert someUserDataUpdate.login == userLogin
+                if not someUserDataUpdate.good():
+                    cancelOrder = CancelOrder(login=someUserDataUpdate.login, orderId=someOrderResponse.orderId)
+                    orderQueue.put(cancelOrder)
+            while (someOrderResponse := readFromQueue(orderResponseQueue)) is not None:
                 incidentWindow.append(msg)
-            if len(incidentWindow) > maxIncidentCount:
-                initiateShutdown()
+                if len(incidentWindow) > maxIncidentCount:
+                    initiateShutdown()
 
             
             time.sleep(0.01)

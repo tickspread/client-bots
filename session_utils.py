@@ -11,15 +11,20 @@ def sessionIdGen():
         sessionOffset += 1
 
 class TimedWindow:
-    def __init__(self, timewindow, *args, **kwds):
+    def __init__(self, timewindow, logFunction=None, *args, **kwds):
         self.timewindow = timewindow
         self.deque = deque(*args, **kwds)
+        self.logFunction = logFunction
 
     def append(self, o):
+        try:
+            self.logFunction(o)
+        except TypeError:
+            pass
         now = datetime.utcnow()
         while self.deque and self.timewindow > now - self.deque[0][0]:
             self.deque.popleft()
-        self.deque.append(now, o)
+        self.deque.append((now, o))
 
     def __len__(self):
         return len(self.deque)
