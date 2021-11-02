@@ -47,7 +47,6 @@ def createDecisionMaker(exchangeQueue, userDataQueue, orderQueue, orderResponseQ
 
         while True:
             exchOrder = readFromQueue(exchangeQueue, timeout=0)
-            userData  = readFromQueue(userDataQueue, timeout=0)
             if ...:
                 orderId = next(orderIds[userLogin])
                 tsOrder = ExecuteOrder(login=userLogin, orderId=orderId)
@@ -58,10 +57,9 @@ def createDecisionMaker(exchangeQueue, userDataQueue, orderQueue, orderResponseQ
                     cancelOrder = CancelOrder(login=someUserDataUpdate.login, orderId=someOrderResponse.orderId)
                     orderQueue.put(cancelOrder)
             while (someOrderResponse := readFromQueue(orderResponseQueue)) is not None:
-                incidentWindow.append(msg)
+                incidentWindow.append(someOrderResponse.message)
                 if len(incidentWindow) > maxIncidentCount:
                     initiateShutdown()
-
             
             time.sleep(0.01)
 
