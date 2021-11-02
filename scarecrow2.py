@@ -2,8 +2,12 @@ import multiprocessing as mp
 import time
 import signal
 import queue
-from session_utils import sessioIdGen, sessionIdGen
+from session_utils import sessionIdGen, TimeWindow
 from collections import defaultdict
+from datetime import datetime, timedelta
+import logging
+
+logging.basicConfig(format='%(levelname)s:%(asctime):%(message)s', level=logging.DEBUG)
 
 def createOrderExecutor(queue, initDetails):
     ...
@@ -24,7 +28,7 @@ def createUserDataWatcher(queue, initDetais):
         ...
     return userDataWatcher
 
-def createDecisionMaker(exchangeQueue, userDataQueue, orderQueue, orderResponseQueue, wait_time=0.01):
+def createDecisionMaker(exchangeQueue, userDataQueue, orderQueue, orderResponseQueue, wait_time=0.01, maxIncidentCount=3, incidentWindow=timedelta(minutes=5)):
     ...
     def decisionMaker(login):
         def readFromQueue(q, timeout=wait_time):
@@ -36,6 +40,10 @@ def createDecisionMaker(exchangeQueue, userDataQueue, orderQueue, orderResponseQ
 
         orderIds = defaultdict(sessionIdGen)
         orderState = {}
+        incidentTally = TimeWindow(timewindow=incidentWindow)
+
+        def initiateShutdown():
+            ...
 
         while True:
             exchOrder = readFromQueue(exchangeQueue, timeout=0)
@@ -44,12 +52,19 @@ def createDecisionMaker(exchangeQueue, userDataQueue, orderQueue, orderResponseQ
                 orderId = next(orderIds[login])
                 tsOrder = ExecuteOrder(login=login, orderId=orderId)
                 orderQueue.put(tsOrder)
-            someOrderResponse = readFromQueue(orderResponseQueue, timeout=0)
-            if someOrderResponse.good():
+            someUserDataUpdate = readFromQueue(userDataQueue, timeout=0)
+            if someUserDataUpdate.good():
                 pass
             else:
-                cancelOrder = CancelOrder(login=login, orderId=someOrderResponse.orderId)
+                cancelOrder = CancelOrder(login=someUserDataUpdate.login, orderId=someOrderResponse.orderId)
                 orderQueue.put(cancelOrder)
+            if (someOrderResponse := readFromQueue(orderResponseQueue)) is not None:
+                logging.error(msg := someOrderResponse.message)
+                incidentWindow.append(msg)
+            if len(incidentWindow) > maxIncidentCount:
+                initiateShutdown()
+
+            
             time.sleep(0.01)
 
         ...
