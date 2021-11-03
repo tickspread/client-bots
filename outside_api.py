@@ -25,29 +25,36 @@ class FTXAPI:
 
     async def connect(self):
         self.websocket = await websockets.connect(self.host, ping_interval=None)
-        asyncio.get_event_loop().create_task(self.loop(self.websocket))
 
     async def subscribe(self, topic):
         data = {'op': 'subscribe', 'channel': topic, 'market': 'ETH-PERP'}
         await self.websocket.send(json.dumps(data))
+        asyncio.get_event_loop().create_task(self.loop(self.websocket, topic))
 
     def on_message(self, callback):
         self.callbacks.append(callback)
 
-    async def loop(self, websocket):
+    async def loop(self, websocket, topic):
         while True:
-            message = await websocket.recv()
-            #message = json.loads(message)
-            for callback in self.callbacks:
-                callback("ftx", message)
-            # print("Debug")
-            '''
-            if (time.time() - self.last_ping > 10.0):
-                ping = json_dumps({'op': 'ping'})
-                print(ping)
-                await self.websocket.send(ping)
-                self.last_ping = time.time()
-            '''
+            try:
+                message = await websocket.recv()
+                #message = json.loads(message)
+                print("Debug")
+                for callback in self.callbacks:
+                    callback("ftx", message)
+                print("Debug")
+                '''
+                if (time.time() - self.last_ping > 10.0):
+                    ping = json_dumps({'op': 'ping'})
+                    print(ping)
+                    await self.websocket.send(ping)
+                    self.last_ping = time.time()
+                '''
+            except Exception as e:
+                print("FTC reconnect")
+                await self.subscribe(topic)
+                break
+            #message = await asyncio.wait_for(websocket.recv(), 5)
 
 
 class BitMEXAPI:
