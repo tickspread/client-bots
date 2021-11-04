@@ -28,9 +28,9 @@ def createUserDataWatcher(queue, initDetais):
         ...
     return userDataWatcher
 
-def createDecisionMaker(exchangeQueue, userDataQueue, orderQueue, orderResponseQueue, userLogin, wait_time=0.01, maxIncidentCount=3, incidentWindow=timedelta(minutes=5)):
+def createOrderController(exchangeQueue, userDataQueue, orderQueue, orderResponseQueue, decisionMaker, userLogin, wait_time=0.01, maxIncidentCount=3, incidentWindow=timedelta(minutes=5)):
     ...
-    def decisionMaker():
+    def orderController():
         def readFromQueue(q, timeout=wait_time):
             try:
                 block = timeout > 0 
@@ -47,19 +47,20 @@ def createDecisionMaker(exchangeQueue, userDataQueue, orderQueue, orderResponseQ
 
         while True:
             exchOrder = readFromQueue(exchangeQueue, timeout=0)
-            if ...:
-                orderId = next(orderIds[userLogin])
-                tsOrder = ExecuteOrder(login=userLogin, orderId=orderId)
+            decisionMaker.updateExchOrder(exchOrder)
+            for orderId, tsOrder in decisionMaker.getTradingOrders():
                 orderQueue.put(tsOrder)
-            while (someUserDataUpdate := readFromQueue(userDataQueue, timeout=0)) is not None:
-                assert someUserDataUpdate.login == userLogin
-                if not someUserDataUpdate.good():
-                    cancelOrder = CancelOrder(login=someUserDataUpdate.login, orderId=someOrderResponse.orderId)
-                    orderQueue.put(cancelOrder)
-            while (someOrderResponse := readFromQueue(orderResponseQueue)) is not None:
-                incidentWindow.append(someOrderResponse.message)
-                if len(incidentWindow) > maxIncidentCount:
-                    initiateShutdown()
+                while (someUserDataUpdate := readFromQueue(userDataQueue, timeout=0)) is not None:
+                    assert someUserDataUpdate.login == userLogin
+                    decisionMaker.updateFailedOrders
+                    if not someUserDataUpdate.good():
+                        decisionMaker.updateFailedOrder(orderId)
+                        for cancelOrder in decisionMaker.getCancelOrders():
+                            orderQueue.put(cancelOrder)
+                while (someOrderResponse := readFromQueue(orderResponseQueue)) is not None:
+                    incidentWindow.append(someOrderResponse.message)
+                    if len(incidentWindow) > maxIncidentCount:
+                        initiateShutdown()
             
             time.sleep(0.01)
 
