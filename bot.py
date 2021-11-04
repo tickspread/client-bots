@@ -621,6 +621,7 @@ class MarketMaker:
             logging.warning("No positions in user_data partial")
             return
 
+        print(payload)
         balance = payload['balance']
         orders = payload['orders']
         positions = payload['positions']
@@ -727,7 +728,7 @@ class MarketMaker:
         event = data['event']
         payload = data['payload']
         topic = data['topic']
-
+        print("received: ", event, payload)
         self.logger.info("event = %s", event)
 
         if (topic == "user_data" and event == "partial"):
@@ -755,15 +756,18 @@ class MarketMaker:
               or event == "delete_order" or event == "abort_create"
               or event == "active_order" or event == "reject_order"
               or event == "reject_cancel"):
+            print("receive accept: ", event)
             if (not 'client_order_id' in payload):
                 self.logger.warning(
                     "No 'client_order_id' in TickSpread %s payload", event)
                 return 0
             clordid = int(payload['client_order_id'])
-            #print("clordid = %d" % clordid)
+            print("clordid = %d" % clordid)
             self.receive_exec(event, clordid)
+            print("fin accept")
         elif (event == "taker_trade" or event == "maker_trade" or
               event == "liquidation" or event == "auto_deleverage"):
+            print("receive trade")
             if (not 'client_order_id' in payload):
                 self.logger.warning(
                     "No 'client_order_id' in TickSpread %s payload", event)

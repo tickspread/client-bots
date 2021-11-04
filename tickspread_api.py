@@ -72,7 +72,7 @@ class TickSpreadAPI:
         
     def create_order_sync(self, client_order_id, amount, price, leverage, symbol, side, type):
 
-        order = {"client_order_id": client_order_id, "amount": amount, "price": price, "leverage": leverage, "market": symbol, "side": side, "type": type}
+        order = {"client_order_id": client_order_id, "amount": str(amount), "price": str(price), "leverage": str(leverage), "market": symbol, "side": side, "type": type}
         
         url = '%s/v2/orders' % self.http_host
         try:
