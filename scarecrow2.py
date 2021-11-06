@@ -2,9 +2,11 @@ import multiprocessing as mp
 import time
 import signal
 import queue
+from dataclasses import dataclass
 from session_utils import sessionIdGen, TimeWindow
 from collections import defaultdict
 from datetime import datetime, timedelta
+from functools import partial
 import logging
 
 logging.basicConfig(format='%(levelname)s:%(asctime):%(message)s', level=logging.DEBUG)
@@ -28,42 +30,50 @@ def createUserDataWatcher(queue, initDetais):
         ...
     return userDataWatcher
 
-def readFromQueue(q, timeout=0.01):
+def readFromQueue(q, timeout):
     try:
         return q.get(block=(timeout > 0), timeout=timeout)
     except queue.Empty:
         return None
 
+@dataclass
+class Flag:
+    value : bool
 
+    def __bool__(self):
+        return bool(self.value)
 
 def createOrderController(exchangeQueue, userDataQueue, orderQueue, orderResponseQueue, decisionMaker, maxIncidentCount=3, incidentWindow=timedelta(minutes=5)):
-    proceed = True
+
+    proceed = Flag(True)
 
     def shutdown(*args, **kwds):
-        nonlocal proceed
-        proceed = False
+        proceed.value = False
 
     signal.signal(signal.SIGTERM, shutdown)
     
     def orderController():
-        incidentTally = TimeWindow(timewindow=incidentWindow, logFunction=logging.error)
+        incidentTally = TimeWindow(timewindow=incidentWindow, logFunction=logging.error, trigger=(maxIncidentCount, shutdown))
 
         while proceed:
-            time.sleep(0.01)
+            userUpdates = iter(partial(readFromQueue, userDataQueue, timeout=0), None)
+            badUserUpdates = (u for u in userUpdates if not u.good())
 
-            exchOrder = readFromQueue(exchangeQueue, timeout=0)
-            decisionMaker.updateExchOrder(exchOrder)
-            for tsOrder in decisionMaker.getTradingOrders():
-                orderQueue.put(tsOrder)
-                while (someUserDataUpdate := readFromQueue(userDataQueue, timeout=0)) is not None:
-                    if not someUserDataUpdate.good():
-                        decisionMaker.updateFailedOrder(someUserDataUpdate.orderId)
-                        for cancelOrder in decisionMaker.getCancelOrders():
-                            orderQueue.put(cancelOrder)
-                while (someOrderResponse := readFromQueue(orderResponseQueue)) is not None:
-                    incidentTally.append(someOrderResponse.message)
-                    if len(incidentTally) > maxIncidentCount:
-                        shutdown()
+            for bu in badUserUpdates: 
+                decisionMaker.updateFailedOrder(bu.orderId)
+
+            exchangeOrders = iter(partial(readFromQueue, exchangeQueue, timeout=0), None)
+
+            for o in exchangeOrders: 
+                decisionMaker.updateExchangeOrder(o)
+
+            for o in decisionMaker.getTradingOrders(): 
+                orderQueue.put(o)
+
+            orderResponses = iter(partial(readFromQueue, orderResponseQueue, timeout=0.01), None)
+            badOrderResponses = filter(None, orderResponses)
+
+            incidentTally.extend(b.message for b in badOrderResponses)
 
     return orderController
 
