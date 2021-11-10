@@ -2,9 +2,11 @@ import multiprocessing as mp
 import time
 import signal
 import queue
+from dataclasses import dataclass
 from session_utils import sessionIdGen, TimeWindow
 from collections import defaultdict
 from datetime import datetime, timedelta
+from functools import partial
 import logging
 
 logging.basicConfig(format='%(levelname)s:%(asctime):%(message)s', level=logging.DEBUG)
@@ -28,43 +30,52 @@ def createUserDataWatcher(queue, initDetais):
         ...
     return userDataWatcher
 
-def createDecisionMaker(exchangeQueue, userDataQueue, orderQueue, orderResponseQueue, userLogin, wait_time=0.01, maxIncidentCount=3, incidentWindow=timedelta(minutes=5)):
-    ...
-    def decisionMaker():
-        def readFromQueue(q, timeout=wait_time):
-            try:
-                block = timeout > 0 
-                return q.get(block=block, timeout=timeout)
-            except queue.Empty:
-                return None
+def readFromQueue(q, timeout):
+    try:
+        return q.get(block=(timeout > 0), timeout=timeout)
+    except queue.Empty:
+        return None
 
-        orderIds = defaultdict(sessionIdGen)
-        orderState = {}
-        incidentTally = TimeWindow(timewindow=incidentWindow, logFunction=logging.error)
+@dataclass
+class Flag:
+    value : bool
 
-        def initiateShutdown():
-            ...
+    def __bool__(self):
+        return bool(self.value)
 
-        while True:
-            exchOrder = readFromQueue(exchangeQueue, timeout=0)
-            if ...:
-                orderId = next(orderIds[userLogin])
-                tsOrder = ExecuteOrder(login=userLogin, orderId=orderId)
-                orderQueue.put(tsOrder)
-            while (someUserDataUpdate := readFromQueue(userDataQueue, timeout=0)) is not None:
-                assert someUserDataUpdate.login == userLogin
-                if not someUserDataUpdate.good():
-                    cancelOrder = CancelOrder(login=someUserDataUpdate.login, orderId=someOrderResponse.orderId)
-                    orderQueue.put(cancelOrder)
-            while (someOrderResponse := readFromQueue(orderResponseQueue)) is not None:
-                incidentWindow.append(someOrderResponse.message)
-                if len(incidentWindow) > maxIncidentCount:
-                    initiateShutdown()
-            
-            time.sleep(0.01)
+def createOrderController(exchangeQueue, userDataQueue, orderQueue, orderResponseQueue, decisionMaker, maxIncidentCount=3, incidentWindow=timedelta(minutes=5)):
 
-        ...
-    return decisionMaker
+    proceed = Flag(True)
+
+    def shutdown(*args, **kwds):
+        proceed.value = False
+
+    signal.signal(signal.SIGTERM, shutdown)
+    
+    def orderController():
+        incidentTally = TimeWindow(timewindow=incidentWindow, logFunction=logging.error, trigger=(maxIncidentCount, shutdown))
+
+        while proceed:
+            userUpdates = iter(partial(readFromQueue, userDataQueue, timeout=0), None)
+            badUserUpdates = (u for u in userUpdates if not u.good())
+
+            for bu in badUserUpdates: 
+                decisionMaker.updateFailedOrder(bu.orderId)
+
+            exchangeOrders = iter(partial(readFromQueue, exchangeQueue, timeout=0), None)
+
+            for o in exchangeOrders: 
+                decisionMaker.updateExchangeOrder(o)
+
+            for o in decisionMaker.getTradingOrders(): 
+                orderQueue.put(o)
+
+            orderResponses = iter(partial(readFromQueue, orderResponseQueue, timeout=0.01), None)
+            badOrderResponses = filter(None, orderResponses)
+
+            incidentTally.extend(b.message for b in badOrderResponses)
+
+    return orderController
 
 def main():
     oe_proc = mp.Process(target=...)
