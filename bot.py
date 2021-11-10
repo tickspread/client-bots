@@ -64,7 +64,7 @@ log_file = args.log
 dex = True if args.dex == "true" else False
 tickspread_password = args.tickspread_password
 
-logging.basicConfig(level=logging.DEBUG,
+logging.basicConfig(level=logging.INFO,
                     format='%(asctime)s %(levelname)-8s %(message)s')
 if log_file != "shell":
     log_handler = logging.handlers.WatchedFileHandler(
@@ -658,14 +658,14 @@ class MarketMaker:
 
         found_symbol_position = False
         for position in positions:
-            if (not 'symbol' in position or
+            if (not 'market' in position or
                 not 'amount' in position or
                 not 'funding' in position or
                     not 'total_margin' in position):  # ADD or not 'total_price' in position
                 logging.warning(
                     "Missing at least one of ['amount', 'funding', 'total_margin'] in position element")
                 continue
-            symbol = position['symbol']
+            symbol = position['market']
             amount = Decimal(position['amount'])
             funding = Decimal(position['funding'])
             total_margin = Decimal(position['total_margin'])

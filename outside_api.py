@@ -51,7 +51,10 @@ class FTXAPI:
                     self.last_ping = time.time()
                 '''
             except Exception as e:
-                print("FTC reconnect")
+                print("FTX reconnect", e)
+                await self.websocket.close()
+                time.sleep(2)
+                await self.connect()
                 await self.subscribe(topic)
                 break
             #message = await asyncio.wait_for(websocket.recv(), 5)
