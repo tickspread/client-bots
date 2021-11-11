@@ -867,8 +867,8 @@ async def main():
         pass
     else:
         api = TickSpreadAPI(id_multiple=1000, env=env)
-        mmaker = MarketMaker(api, tick_jump=Decimal("0.1"), orders_per_side=50,
-                         order_size=Decimal("0.05"), max_position=Decimal("10.0"))
+        mmaker = MarketMaker(api, tick_jump=Decimal("0.2"), orders_per_side=30,
+                         order_size=Decimal("0.015"), max_position=Decimal("4.0"))
         print("REGISTER")
         api.register('maker%s@tickspread.com' % id, tickspread_password)
         time.sleep(0.3)
