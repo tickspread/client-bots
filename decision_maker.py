@@ -5,7 +5,7 @@ class DecisionMakerBase:
     def updateExchOrder(self, exchOrder):
         ...
 
-    def updateFailedOrder(self, orderId):
+    def updateTradingOrderStatus(self, orderStatus):
         ...
 
     def getTradingOrders(self) -> List:

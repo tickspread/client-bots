@@ -56,11 +56,10 @@ def createOrderController(exchangeQueue, userDataQueue, orderQueue, orderRespons
         incidentTally = TimeWindow(timewindow=incidentWindow, logFunction=logging.error, trigger=(maxIncidentCount, shutdown))
 
         while proceed:
-            userUpdates = iter(partial(readFromQueue, userDataQueue, timeout=0), None)
-            badUserUpdates = (u for u in userUpdates if not u.good())
+            userDataUpdates = iter(partial(readFromQueue, userDataQueue, timeout=0), None)
 
-            for bu in badUserUpdates: 
-                decisionMaker.updateFailedOrder(bu.orderId)
+            for userDataUpdate in userDataUpdates: 
+                decisionMaker.updateTradingOrderStatus(userDataUpdate)
 
             exchangeOrders = iter(partial(readFromQueue, exchangeQueue, timeout=0), None)
 
@@ -70,7 +69,7 @@ def createOrderController(exchangeQueue, userDataQueue, orderQueue, orderRespons
             for o in decisionMaker.getTradingOrders(): 
                 orderQueue.put(o)
 
-            orderResponses = iter(partial(readFromQueue, orderResponseQueue, timeout=0.01), None)
+            orderResponses = iter(partial(readFromQueue, orderResponseQueue, timeout=0.001), None)
             badOrderResponses = filter(None, orderResponses)
 
             incidentTally.extend(b.message for b in badOrderResponses)
