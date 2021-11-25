@@ -4,24 +4,43 @@
 import json
 from confluent_kafka import Producer, Consumer
 
-host = 'localhost'
+# host = 'localhost'
+host = '10.60.4.20'
 
-producer = Producer({'bootstrap.servers': '%s:9092' % host})
+producer = Producer({'bootstrap.servers': '%s:9093' % host})
 
 topic = 'user_data'
-key = 'create_account'
+key = 'transfer_balance'
 
 
 messages = [
-{
-    "event": "withdraw_committed",
-    "withdraw_id": 16,
-    "address": "tb1q3r8mn65e6uxyydwfrln2p20e2td3fkajaxvjye",
-    "user_group_id": 0,
-    "user_id": 62,
-    "amount": 7100000000,
-    "status": "committed"
-}
+    {
+        "event": "transfer_balance",
+        "user_group_id": 0,
+        "user_id_from": 11,
+        "user_id_to": 15,
+        "asset": "USDC",
+        "balance_amount": 890000000,
+        "asset_precision": 6
+    },
+    {
+        "event": "transfer_balance",
+        "user_group_id": 0,
+        "user_id_from": 11,
+        "user_id_to": 65524,
+        "asset": "USDC",
+        "balance_amount": 200000000,
+        "asset_precision": 6
+    },
+    {
+        "event": "transfer_balance",
+        "user_group_id": 0,
+        "user_id_from": 11,
+        "user_id_to": 13,
+        "asset": "USDC",
+        "balance_amount": 10000000,
+        "asset_precision": 6
+    }
 ]
 
 for value in messages:
