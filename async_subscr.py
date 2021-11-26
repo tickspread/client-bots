@@ -5,21 +5,24 @@ import websockets
 from functools import partial
 
 async def call_subscription(subscrMessage, subscrUrl):
-    ws = await websockets.connect(subscrUrl)
-    await ws.send(json.dumps(subscrMessage)) 
-    while True:
-        response = await ws.recv()
-        yield response
+    async with websockets.connect(subscrUrl, compression=None) as ws:
+        await ws.send(json.dumps(subscrMessage)) 
+        while True:
+            yield (response := await ws.recv())
     
-
 async def gather_all(params):
     gather_funcs = [ call_subscription(**p) for p in params ] 
     await asyncio.gather( *gather_funcs )
 
-async def main(subscrMessage, subscrUrl):
+async def subscr1(subscrMessage, subscrUrl):
     subscr_gen = call_subscription(subscrMessage, subscrUrl)
+    print( "using next:")
+    x = await subscr_gen.__anext__()
+    print(x)
     async for resp in subscr_gen:
+        print ("using for")
         print( resp )
+        break
 
 
 if __name__ == "__main__":
@@ -36,5 +39,5 @@ if __name__ == "__main__":
 
 
 
-    asyncio.run( main(**params[0]) )
+    asyncio.run( subscr1(**params[0]) )
 
