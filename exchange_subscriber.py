@@ -7,7 +7,7 @@ import logging
 class WebsocketExchangeMonitor(ABC):
 
     @abstractmethod
-    def __init__(self, *args, *kwds):
+    def __init__(self, *args):
         ...
 
     @abstractmethod
@@ -35,7 +35,7 @@ class WebsocketExchangeMonitor(ABC):
 
 
 
-class BitMEXAPI:
+class FTXAPI:
     def __init__(self, logger=logging.getLogger()):
         self.host = "wss://www.bitmex.com/realtime?subscribe=trade:XBTUSD"
         self.logger = logger
