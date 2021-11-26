@@ -1,60 +1,55 @@
-from collections import ABC, abstractmethod
-import json
 import asyncio
 import websockets
+import json
 import logging
+from functools import partial
+import multiprocessing as mp
+from queue import Empty
 
-class WebsocketExchangeMonitor(ABC):
+from typing import Callable, AsyncGenerator
 
-    @abstractmethod
-    def __init__(self, *args):
-        ...
-
-    @abstractmethod
-    def subscription_url(self, marketUrl):
-        """
-            for example, "wss://www.bitmex.com/realtime?subscribe=trade:XBTUSD"
-        """
-
-    @abstractmethod
-    def subscription_data(self):
-        """
-            for example, {'op': 'subscribe', 'channel': topic, 'market': 'ETH-PERP'}
-        """
-
-    async def connect(self):
-        self.websocket = await websockets.connect(self.subscription_url())
-        asyncio.get_event_loop().create_task(self.loop(self.websocket))
-
-    async def loop(self, websocket):
+async def call_subscription(subscrMessage, subscrUrl):
+    async with websockets.connect(subscrUrl, compression=None) as ws:
+        await ws.send(json.dumps(subscrMessage)) 
         while True:
-            message = await websocket.recv()
+            yield (response := await ws.recv())
 
+ftx_Eth_Perp_Subscriber = partial(                        
+                        call_subscription,          
+                        subscrMessage = {'op': 'subscribe', 'channel': 'trades', 'market': 'ETH-PERP'},
+                        subscrUrl = "wss://ftx.com/ws/",
+)
 
+async def subscriptionConsumer(subscriber : AsyncGenerator, callback : Callable, headerLength=1):
+    for i in range(headerLength):
+        _ = await subscriber.__anext__()
+    async for response in subscriber:
+        callback(response)
 
+queue = mp.Queue()
 
+async def otherProcessMain():
+    await subscriptionConsumer(ftx_Eth_Perp_Subscriber(), queue.put)
 
+def ourProcessWorker(queue):
+    import time
+    for i in range(10000):
+        try:
+            resp = queue.get(block=False, timeout=0.1)
+            print("Received: ", resp)
+        except Empty:
+            time.sleep(0.1)
 
-class FTXAPI:
-    def __init__(self, logger=logging.getLogger()):
-        self.host = "wss://www.bitmex.com/realtime?subscribe=trade:XBTUSD"
-        self.logger = logger
-        self.callbacks = []
+def otherProcessWorker():
+    asyncio.run(otherProcessMain())
 
-    async def connect(self):
-        self.websocket = await websockets.connect(self.host)
-        asyncio.get_event_loop().create_task(self.loop(self.websocket))
+def main():
+    p1 = mp.Process(target=otherProcessWorker)
+    p2 = mp.Process(target=ourProcessWorker, args=(queue,) )
+    #  p1.daemon = True
+    # p2.daemon = True
+    p1.start()
+    p2.start()
 
-    async def subscribe(self, topic):
-        data = {'op': 'subscribe', 'channel': topic, 'market': 'ETH-PERP'}
-        await self.websocket.send(json.dumps(data))
-
-    def on_message(self, callback):
-        self.callbacks.append(callback)
-
-    async def loop(self, websocket):
-        while True:
-            message = await websocket.recv()
-            #message = json.loads(message)
-            for callback in self.callbacks:
-                callback("bitmex", message)
+if __name__ == "__main__":
+    main()
