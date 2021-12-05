@@ -8,8 +8,26 @@ from collections import defaultdict
 from datetime import datetime, timedelta
 from functools import partial
 import logging
+import asyncio
+import json
+import websockets
+from functools import partial
 
 logging.basicConfig(format='%(levelname)s:%(asctime):%(message)s', level=logging.DEBUG)
+
+
+async def exchange_call_subscription(subscrMessage, subscrUrl):
+    async with websockets.connect(subscrUrl, compression=None) as ws:
+        await ws.send(json.dumps(subscrMessage)) 
+        while True:
+            yield (response := await ws.recv())
+
+async def subscriptionConsumer(subscriber : AsyncGenerator, callback : Callable, headerLength=1):
+    for i in range(headerLength):
+        _ = await subscriber.__anext__()
+    async for response in subscriber:
+        callback(response)
+
 
 def createOrderExecutor(queue, initDetails):
     ...
@@ -76,13 +94,40 @@ def createOrderController(exchangeQueue, userDataQueue, orderQueue, orderRespons
 
     return orderController
 
+# 
+# a sample exchange subscriber -- treat it as an example
+#
+ftx_Eth_Perp_Subscriber = partial(                        
+                        exchange_call_subscription,          
+                        subscrMessage = {'op': 'subscribe', 'channel': 'trades', 'market': 'ETH-PERP'},
+                        subscrUrl = "wss://ftx.com/ws/",
+)
+
+ftx_BTC_Perp_Subscriber = partial(                        
+                        exchange_call_subscription,          
+                        subscrMessage = {'op': 'subscribe', 'channel': 'trades', 'market': 'BTC-PERP'},
+                        subscrUrl = "wss://ftx.com/ws/",
+)
+
+
+exchangeQueue = mp.Queue()
+
+async def exchangeSubscriberMain(subscriber, queue):
+    await subscriptionConsumer(subscriber(), queue.put)
+
+def exchangeWatcherMain(queue):
+    asyncio.gather( exchangeSubscriberMain(ftx_Eth_Perp_Subscriber, queue), 
+                    exchangeSubscriberMain(ftx_BTC_Perp_Subscriber, queue),
+                  )
+
 def main():
     oe_proc = mp.Process(target=...)
-    exw_ftx_proc = mp.Process(target=...)
-    exw_gem_proc = mp.Process(target=...)
+
+    exchangeWatcherProc = mp.process(target=exchangeWatcherMain, args=(exchangeQueue,))
+
     decision_proc = mp.Process(target=...)
 
-    allProcs = [oe_proc, exw_ftx_proc, exw_gem_proc, decision_proc]
+    allProcs = [oe_proc, exchangeWatcherProc, decision_proc]
     for p in allProcs:
         p.daemon = True
         p.start()
