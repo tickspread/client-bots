@@ -55,7 +55,8 @@ parser.add_argument('--dex', dest='dex', default="false",
                     help='set the tyoe of exchange (default: prod)')
 parser.add_argument('--tickspread_password', dest='tickspread_password', default="maker",
                     help='set the tickspread_password to login (default: maker)')
-
+parser.add_argument('--market', dest='market', required=True)
+parser.add_argument('--money_asset', dest='money_asset', required=True)
 
 args = parser.parse_args()
 id = args.id
@@ -354,8 +355,8 @@ class MarketMaker:
         self.tick_jump = tick_jump
         self.order_size = order_size
         self.leverage = leverage
-        self.symbol = "ETH-PERP"
-        self.money = "USDC"
+        self.symbol = args.market
+        self.money = args.money_asset
         self.max_position = max_position
 
         # State
@@ -889,8 +890,8 @@ async def main():
         #huobi_api = HuobiAPI()
 
         await api.connect()
-        # await api.subscribe("market_data", {"symbol": "ETH-PERP"})
-        await api.subscribe("user_data", {"symbol": "ETH-PERP"})
+        # await api.subscribe("market_data", {"symbol": args.market})
+        await api.subscribe("user_data", {"symbol": args.market})
         api.on_message(mmaker.callback)
 
     # await bybit_api.connect()
