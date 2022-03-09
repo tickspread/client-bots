@@ -17,10 +17,11 @@ messages = [
     {
         "event": "transfer_balance",
         "user_group_id": 0,
-        "user_id_from": 15,
-        "user_id_to": 37,
-        "asset": "USDC",
-        "balance_amount": 27880000,
+        "user_id_from": 65285,
+        "user_id_to": 65524,
+        "asset": "USD",
+        "asset_id": 1,
+        "balance_amount": 200000000,
         "asset_precision": 6
     },
     # {
