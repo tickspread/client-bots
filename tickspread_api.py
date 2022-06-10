@@ -17,14 +17,17 @@ class TickSpreadAPI:
     def __init__(self, logger=logging.getLogger(), id_multiple=100, env="staging"):
         self.next_id = int(time.time()*id_multiple)
         self.logger = logger
+        self.callbacks = []
         #self.host = 'api.tickspread.com'
+        
         if env == "dev":
             self.http_host = 'http://localhost:4000'
             self.ws_host = 'ws://localhost:4000'
         elif env == "staging":
             self.http_host = "http://stag.api.tickspread.com"
             self.ws_host = "ws://stag.api.tickspread.com"
-        else:
+        elif env == "prod":
+            print("Production API")
             self.http_host = 'https://api.tickspread.com'
             self.ws_host = 'wss://api.tickspread.com'
     
@@ -45,13 +48,12 @@ class TickSpreadAPI:
         try:
             data = json.loads(r.text)
             self.token = data["token"]
-            self.callbacks = []
             self.websocket = None
         except:
             self.logger.error(r.text)
             return False
         
-        return True
+        return r.text
     
     def register(self, username, password):
         payload = {"type": "email_pass", "email": username, "password": password}
@@ -146,15 +148,18 @@ class TickSpreadAPI:
     
     async def connect(self):
         self.websocket = await websockets.connect("%s/realtime" % self.ws_host, ping_interval=None)
+        print("connect")
         asyncio.get_event_loop().create_task(self.loop(self.websocket))
 
     async def subscribe(self, topic, arguments):
+        print("subscribe")
         data = {
             "topic": topic,
             "event": "subscribe",
             "payload": arguments,
             "authorization": "Bearer %s" % self.token
         }
+        print(data)
         
         try:
             await self.websocket.send(json.dumps(data))
@@ -162,6 +167,7 @@ class TickSpreadAPI:
             self.logger.error(e)
             logging.shutdown()
             sys.exit(1)
+        print("Subscribe OK")
 
     def on_message(self, callback):
         self.callbacks.append(callback)
@@ -172,7 +178,7 @@ class TickSpreadAPI:
             try:
                 #print("wait")
                 message = await websocket.recv()
-                #print("received")
+                #print("received message:", message)
             except Exception as e:
                 print("ERROR")
                 self.logger.error(e)
