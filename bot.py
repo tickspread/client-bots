@@ -254,7 +254,6 @@ class MarketMakerSide:
                 self.parent.logger.info(
                     "Found empty order %d, will send NEW with size %d", index, size)
                 if (size > 0):
-                    self.available_limit -= size
                     self.parent.send_new(order, size, price)
             if (order.state != OrderState.EMPTY
                     and order.cancel == CancelState.NORMAL):
@@ -283,7 +282,6 @@ class MarketMakerSide:
                 if (order.state == OrderState.EMPTY):
                     size = min(self.order_size, self.available_limit)
                     if (size > 0):
-                        self.available_limit -= size
                         self.parent.send_new(order, size, price)
 
                 if (order.state != OrderState.EMPTY
@@ -374,6 +372,12 @@ class MarketMaker:
                          (side_to_str(side), amount_left, price, clordid))
 
     def send_new(self, order, amount, price):
+        if (order.side == Side.BID):
+            self.bid_available_limit -= amount
+        else:
+            assert(order.side == SIDE.ASK)
+            self.ask_available_limit -= amount
+        
         clordid = self.api.get_next_clordid()
 
         self.log_new(order.side, amount, price, clordid)
@@ -892,6 +896,7 @@ async def main():
         await api.connect()
         # await api.subscribe("market_data", {"symbol": args.market})
         await api.subscribe("user_data", {"symbol": args.market})
+        #await api.subscribe("market_data", {"symbol": args.market})
         api.on_message(mmaker.callback)
 
     # await bybit_api.connect()
