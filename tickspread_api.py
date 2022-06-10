@@ -70,9 +70,9 @@ class TickSpreadAPI:
     def get_next_clordid(self):
         return self.next_id
         
-    def create_order_sync(self, client_order_id, amount, price, leverage, symbol, side, type):
+    def create_order_sync(self, client_order_id, amount, price, leverage, symbol, side, type, sweeper):
 
-        order = {"client_order_id": client_order_id, "amount": str(amount), "price": str(price), "leverage": str(leverage), "market": symbol, "side": side, "type": type}
+        order = {"client_order_id": client_order_id, "amount": str(amount), "price": str(price), "leverage": leverage, "market": symbol, "side": side, "type": type, "sweeper": sweeper}
         
         url = '%s/v2/orders' % self.http_host
         try:
@@ -97,24 +97,24 @@ class TickSpreadAPI:
         
         return client_order_id
 
-    def create_order(self, *, client_order_id=0, amount, price, leverage, symbol="ETH-PERP", side, type="limit", asynchronous=False):
+    def create_order(self, *, client_order_id=0, amount, price, leverage, symbol="ETH", side, type="limit", asynchronous=False, sweeper=0):
         if (client_order_id == 0):
             client_order_id = self.next_id
             self.next_id += 1
         if (asynchronous==False):    
-            return self.create_order_sync(client_order_id,amount,price,leverage,symbol,side,type)
+            return self.create_order_sync(client_order_id,amount,price,leverage,symbol,side,type,sweeper)
         else:
             #print("%f: ASYNC NEW" % time.time())
             loop = asyncio.get_event_loop()
             loop.run_in_executor(
             None,
             self.create_order_sync,
-            client_order_id,amount,price,leverage,symbol,side,type)
+            client_order_id,amount,price,leverage,symbol,side,type,sweeper)
             
             #print("%f: ASYNC NEW END" % time.time())
             return "OK"
 
-    def delete_order_sync(self, client_order_id, symbol="ETH-PERP"):
+    def delete_order_sync(self, client_order_id, symbol="ETH"):
         url = '%s/v2/orders' % (self.http_host)
         counter = 0
         r = None
@@ -170,10 +170,11 @@ class TickSpreadAPI:
         rc = 0
         while rc == 0:
             try:
-                print("wait")
+                #print("wait")
                 message = await websocket.recv()
-                print("received")
+                #print("received")
             except Exception as e:
+                print("ERROR")
                 self.logger.error(e)
                 logging.shutdown()
                 sys.exit(1)
@@ -194,8 +195,8 @@ async def main():
         return 1
     
     await api.connect()
-    await api.subscribe("market_data", {"symbol": "ETH-PERP"})
-    await api.subscribe("user_data", {"symbol": "ETH-PERP"})
+    await api.subscribe("market_data", {"symbol": "ETH"})
+    await api.subscribe("user_data", {"symbol": "ETH"})
     api.on_message(lambda source, data: logging.info(data))
 
 if __name__ == "__main__":
