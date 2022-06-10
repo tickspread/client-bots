@@ -14,15 +14,6 @@ key = 'transfer_balance'
 
 
 messages = [
-    {
-        "event": "transfer_balance",
-        "user_group_id": 0,
-        "user_id_from": 15,
-        "user_id_to": 37,
-        "asset": "USDC",
-        "balance_amount": 27880000,
-        "asset_precision": 6
-    },
     # {
     #     "event": "transfer_balance",
     #     "user_group_id": 0,
