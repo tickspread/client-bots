@@ -28,8 +28,8 @@ starting_offset = int(args.offset)
 
 print(topic)
 c = Consumer({
-#    'bootstrap.servers': '10.10.2.46:9092',
-    'bootstrap.servers': '%s:9092' % host,
+   'bootstrap.servers': '10.60.4.20:9093',
+    # 'bootstrap.servers': '%s:9092' % host,
     'group.id': group_id,
     'auto.offset.reset': start,
     'enable.auto.commit': 'false'
