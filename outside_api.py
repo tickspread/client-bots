@@ -42,7 +42,8 @@ class FTXAPI:
             assert(self._api_key)
             assert(self._subaccount_name)
         else:
-            assert(False)
+            # assert(False)
+            pass
 
     def _process_response(self, response: Response) -> Any:
         try:

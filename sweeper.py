@@ -164,7 +164,7 @@ class Sweeper:
                 ftx_api, ftx_fee=0.0005,
                 logger=logging.getLogger(),
                 name="sweeper", version="0.0",
-                leverage=5, max_position=5.0):
+                leverage=10, max_position=10.0):
         self.api = api
         self.ftx_api = ftx_api
         
@@ -173,7 +173,7 @@ class Sweeper:
         self.version = version
         self.leverage = leverage
         self.max_position = max_position
-        self.max_amount = Decimal('0.0100')
+        self.max_amount = Decimal('5.0000')
         
         self.ftx_min_amount = Decimal('0.001')
         self.tick_min_amount = Decimal('0.0001')
@@ -548,12 +548,15 @@ class Sweeper:
         
         if (data['side'] == 'bid'):
             self.sweeper_side = Side.BID
-            max_amount = min(self.sweeper_max_amount, self.tick_max_position + self.tick_position)
-            amount = max_amount - self.residual_position
+            #max_amount = min(self.sweeper_max_amount, self.tick_max_position + self.tick_position)
+            amount = self.sweeper_max_amount - self.residual_position
         else:
             self.sweeper_side = Side.ASK
-            max_amount = min(self.sweeper_max_amount, self.tick_max_position - self.tick_position)
+            #max_amount = min(self.sweeper_max_amount, self.tick_max_position - self.tick_position)
             amount = self.sweeper_max_amount + self.residual_position
+        
+        if (amount > self.max_amount):
+            amount = self.max_amount
         
         print('amount = %s' % amount)
         amount = amount.quantize(self.ftx_min_amount)
