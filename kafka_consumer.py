@@ -37,7 +37,6 @@ starting_offset = int(args.offset)
 print("Topic: ", topic)
 
 c = Consumer({
-#    'bootstrap.servers': '10.10.2.46:9092',
     'bootstrap.servers': '%s:%s' % (host, port),
     'group.id': group_id,
     'auto.offset.reset': start,
