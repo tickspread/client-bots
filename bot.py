@@ -135,7 +135,7 @@ def order_cancel_to_str(cancel):
         return "?"
 
 
-MAX_CANCEL_RETRIES = 5
+MAX_CANCEL_RETRIES = 50
 
 
 class Order:
@@ -372,11 +372,11 @@ class MarketMaker:
                          (side_to_str(side), amount_left, price, clordid))
 
     def send_new(self, order, amount, price):
-        if (order.side == Side.BID):
-            self.bid_available_limit -= amount
-        else:
-            assert(order.side == SIDE.ASK)
-            self.ask_available_limit -= amount
+        # if (order.side == Side.BID):
+        #     self.bid_available_limit -= amount
+        # else:
+        #     assert(order.side == SIDE.ASK)
+        #     self.ask_available_limit -= amount
         
         clordid = self.api.get_next_clordid()
 
@@ -468,8 +468,8 @@ class MarketMaker:
             else:
                 self.logger.error(
                     "Order %d has been cancelled more than %d times, giving up", order.clordid, MAX_CANCEL_RETRIES)
-                logging.shutdown()
-                sys.exit(1)
+                # logging.shutdown()
+                # sys.exit(1)
         else:
             order.cancel = CancelState.NORMAL
             # TODO send another cancel immediately
@@ -896,7 +896,6 @@ async def main():
         await api.connect()
         # await api.subscribe("market_data", {"symbol": args.market})
         await api.subscribe("user_data", {"symbol": args.market})
-        #await api.subscribe("market_data", {"symbol": args.market})
         api.on_message(mmaker.callback)
 
     # await bybit_api.connect()
@@ -909,6 +908,7 @@ async def main():
     # await ftx_api.subscribe('ticker')
     # await ftx_api.subscribe('orderbook')
     await ftx_api.subscribe('trades')
+    await ftx_api.start_loop()
     # # logging.info("Done")
     # ftx_api.on_message(mmaker.callback)
 

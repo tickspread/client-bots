@@ -164,7 +164,7 @@ class Sweeper:
                 ftx_api, ftx_fee=0.0005,
                 logger=logging.getLogger(),
                 name="sweeper", version="0.0",
-                leverage=10, max_position=1.0):
+                leverage=10, max_position=10.0):
         self.api = api
         self.ftx_api = ftx_api
         
@@ -173,7 +173,7 @@ class Sweeper:
         self.version = version
         self.leverage = leverage
         self.max_position = max_position
-        self.max_amount = Decimal('0.0100')
+        self.max_amount = Decimal('5.0000')
         
         self.ftx_min_amount = Decimal('0.001')
         self.tick_min_amount = Decimal('0.0001')
@@ -223,6 +223,9 @@ class Sweeper:
         self.sweeper_order_id = int(time.time() * 100)
         
         self.residual_position = Decimal(0)
+        self.tick_position = Decimal(0)
+        self.ftx_position = Decimal(0)
+        self.max_position = Decimal(max_position)
 
     def log_new(self, side, amount, price, clordid):
         self.logger.info("->NEW %s %s @ %s (%d)" %
@@ -545,10 +548,15 @@ class Sweeper:
         
         if (data['side'] == 'bid'):
             self.sweeper_side = Side.BID
+            #max_amount = min(self.sweeper_max_amount, self.tick_max_position + self.tick_position)
             amount = self.sweeper_max_amount - self.residual_position
         else:
             self.sweeper_side = Side.ASK
+            #max_amount = min(self.sweeper_max_amount, self.tick_max_position - self.tick_position)
             amount = self.sweeper_max_amount + self.residual_position
+        
+        if (amount > self.max_amount):
+            amount = self.max_amount
         
         print('amount = %s' % amount)
         amount = amount.quantize(self.ftx_min_amount)
@@ -559,9 +567,9 @@ class Sweeper:
             # Instead return immediately a complete fill to TickSpread
             
             if (data['side'] == 'bid'):
-                return_amount = max(self.residual_position, self.sweeper_max_amount).quantize(self.sweeper_max_amount)
+                return_amount = max(self.residual_position, self.sweeper_max_amount).quantize(self.tick_min_amount)
             else:
-                return_amount = max(-self.residual_position, self.sweeper_max_amount).quantize(self.sweeper_max_amount)
+                return_amount = max(-self.residual_position, self.sweeper_max_amount).quantize(self.tick_min_amount)
 
             if (return_amount < 0):
                 return_amount = 0
@@ -622,7 +630,10 @@ class Sweeper:
         event = data['event']
         payload = data['payload']
         topic = data['topic']
-
+        
+        if (topic != "market_data"):
+            self.logger.info("<-%-10s: %s", "tick", data)
+        
         if (topic == "user_data" and event == "partial"):
             self.tickspread_user_data_partial(payload)
             print("FINISH_OK")
@@ -757,6 +768,7 @@ class Sweeper:
 
 
     def callback(self, source, raw_data):
+        #print("CALLBACK")
         #self.logger.info("<-%-10s: %s", source, raw_data)
 
         if isinstance(raw_data, dict):
@@ -773,33 +785,32 @@ class Sweeper:
 
 async def main():
     api = TickSpreadAPI(id_multiple=1000, env=env)
+    ftx_api = FTXAPI(auth=Secrets())
+    sweeper = Sweeper(api, ftx_api=ftx_api)
+
+    api.on_message(sweeper.callback)
+    ftx_api.on_message(sweeper.callback)
     
-    login_status = api.login('sweeper1@tickspread.com', tickspread_password)
+    login_status = api.login('sweeper@tickspread.com', tickspread_password)
     
     if (not login_status):
         asyncio.get_event_loop().stop()
         print("Login Failure")
         return 1
+    print(login_status)
     print("STARTING")
     
     await api.connect()
     await api.subscribe("user_data", {"symbol": args.market})
     await api.subscribe("market_data", {"symbol": args.market})
 
-
-    ftx_api = FTXAPI(auth=Secrets())
     await ftx_api.connect()
     await ftx_api.login()
-    # await ftx_api.subscribe('ticker')
-    # await ftx_api.subscribe('orderbook')
+    #await ftx_api.subscribe('ticker')
+    #await ftx_api.subscribe('orderbook')
     await ftx_api.subscribe('trades')
     await ftx_api.subscribe('orders')
     await ftx_api.start_loop()
-
-    
-    sweeper = Sweeper(api, ftx_api=ftx_api)
-    api.on_message(sweeper.callback)
-    ftx_api.on_message(sweeper.callback)
     
     print("FINISH INIT")
 
