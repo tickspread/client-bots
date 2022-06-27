@@ -631,8 +631,8 @@ class Sweeper:
         payload = data['payload']
         topic = data['topic']
         
-        if (topic != "market_data"):
-            self.logger.info("<-%-10s: %s", "tick", data)
+        #if (topic != "market_data"):
+        #    self.logger.info("<-%-10s: %s", "tick", data)
         
         if (topic == "user_data" and event == "partial"):
             self.tickspread_user_data_partial(payload)
@@ -769,7 +769,7 @@ class Sweeper:
 
     def callback(self, source, raw_data):
         #print("CALLBACK")
-        #self.logger.info("<-%-10s: %s", source, raw_data)
+        self.logger.info("<-%-10s: %s", source, raw_data)
 
         if isinstance(raw_data, dict):
             data = raw_data

@@ -12,6 +12,9 @@ parser.add_argument('--group_id', dest='group_id', default="utils-consumer-gid",
 parser.add_argument('--host', dest='host', default="localhost",
                     help='set the host that will consume from (default: utils-consumer-gid)')
 
+parser.add_argument('--port', dest='port', default="9092",
+                    help='set the port that will consume from (default: 9092)')
+
 parser.add_argument('--start', dest='start', default="earliest",
                             help='set the offset that will consume from (default: earliest)')
 
@@ -19,21 +22,22 @@ parser.add_argument('--offset', dest='offset', default=-1,
                     help='Start reading from an offset in the topic (default: -1 the tail)')
 
 parser.add_argument('--partition', dest='partition', default=0,
-                    help='Start reading from an partition in the topic (default: 0 the tail)')
+                    help='Start reading from an partition in the topic (default: 0)')
 
 args = parser.parse_args()
 
 topic = args.topic
 group_id = args.group_id
 host = args.host
+port = args.port
 start = args.start
 partition = int(args.partition)
 starting_offset = int(args.offset)
 
-print(topic)
+print("Topic: ", topic)
+
 c = Consumer({
-   'bootstrap.servers': '10.60.4.20:9093',
-    # 'bootstrap.servers': '%s:9092' % host,
+    'bootstrap.servers': '%s:%s' % (host, port),
     'group.id': group_id,
     'auto.offset.reset': start,
     'enable.auto.commit': 'false'
@@ -56,7 +60,8 @@ while True:
         print("Consumer error: {}".format(msg.error()))
         continue
 
-    print('Message [%d]:\n' % msg.offset() +'{}'.format(msg.value().decode('utf-8')))
+    #print('Message [%d]:\n' % msg.offset() +'{}'.format(msg.value().decode('utf-8')))
+    print('Message [%d] %s:\t' % (msg.offset(), msg.timestamp()) +'{}'.format(msg.value().decode('utf-8')))
+
 
 c.close()
-
