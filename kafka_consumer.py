@@ -18,12 +18,16 @@ parser.add_argument('--start', dest='start', default="earliest",
 parser.add_argument('--offset', dest='offset', default=-1,
                     help='Start reading from an offset in the topic (default: -1 the tail)')
 
+parser.add_argument('--partition', dest='partition', default=0,
+                    help='Start reading from an partition in the topic (default: 0 the tail)')
+
 args = parser.parse_args()
 
 topic = args.topic
 group_id = args.group_id
 host = args.host
 start = args.start
+partition = int(args.partition)
 starting_offset = int(args.offset)
 
 print(topic)
@@ -36,13 +40,13 @@ c = Consumer({
 })
 
 if starting_offset < 0:
-    low, high = c.get_watermark_offsets(TopicPartition(topic, 0), cached=False)
+    low, high = c.get_watermark_offsets(TopicPartition(topic, partition), cached=False)
     print("high", high)
     starting_offset = high + starting_offset
     if starting_offset < low:
         starting_offset = low
 
-c.assign([TopicPartition(topic, 0, offset=starting_offset)])
+c.assign([TopicPartition(topic, partition, offset=starting_offset)])
 
 while True:
     msg = c.poll(1.0)
