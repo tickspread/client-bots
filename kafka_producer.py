@@ -4,10 +4,10 @@
 import json
 from confluent_kafka import Producer, Consumer
 
-# host = 'localhost'
-host = '10.60.4.20'
+host = 'localhost'
+# host = '10.60.4.20'
 
-producer = Producer({'bootstrap.servers': '%s:9093' % host})
+producer = Producer({'bootstrap.servers': '%s:9092' % host})
 
 topic = 'user_data'
 key = 'transfer_balance'
@@ -17,11 +17,11 @@ messages = [
     {
         "event": "transfer_balance",
         "user_group_id": 0,
-        "user_id_from": 65285,
-        "user_id_to": 65524,
-        "asset": "USD",
-        "asset_id": 1,
-        "balance_amount": 200000000,
+        "user_id_from": 1,
+        "user_id_to": 0,
+        "asset": "testUSD",
+        "asset_id": 7,
+        "balance_amount": 6000000000,
         "asset_precision": 6
     },
 ]

@@ -56,6 +56,7 @@ parser.add_argument('--dex', dest='dex', default="false",
 parser.add_argument('--tickspread_password', dest='tickspread_password', default="maker",
                     help='set the tickspread_password to login (default: maker)')
 parser.add_argument('--market', dest='market', required=True)
+parser.add_argument('--ftx_market', dest='ftx_market', required=True)
 parser.add_argument('--money_asset', dest='money_asset', required=True)
 
 args = parser.parse_args()
@@ -68,11 +69,12 @@ tickspread_password = args.tickspread_password
 logging.basicConfig(level=logging.INFO,
                     format='%(asctime)s %(levelname)-8s %(message)s')
 if log_file != "shell":
-    log_handler = logging.handlers.WatchedFileHandler(
-        '/home/ubuntu/store/logs/bot_%s.log' % id)
+    # log_handler = logging.handlers.WatchedFileHandler(
+    #     '/home/ubuntu/store/logs/bot_%s.log' % id)
+    log_handler = logging.handlers.WatchedFileHandler(log_file)
     logger = logging.getLogger()
     logger.removeHandler(logger.handlers[0])
-    # logger.addHandler(log_handler)
+    logger.addHandler(log_handler)
 
 
 class Side(Enum):
@@ -308,7 +310,7 @@ class MarketMakerSide:
 class MarketMaker:
     def __init__(self, api, *, logger=logging.getLogger(),
                  name="bot_example", version="0.0",
-                 orders_per_side=8, max_position=400, tick_jump=10, order_size=5, leverage=10):
+                 orders_per_side=8, max_position=400, tick_jump=10, order_size=0.5, leverage=10):
         # System
         self.api = api
         self.logger = logger
@@ -394,7 +396,8 @@ class MarketMaker:
                                   leverage=self.leverage,
                                   symbol=self.symbol,
                                   side=side_to_str(order.side),
-                                  asynchronous=True)
+                                  asynchronous=True,
+                                  batch=True)
 
     def send_cancel(self, order):
         self.log_cancel(order.side, order.amount_left,
@@ -402,7 +405,7 @@ class MarketMaker:
 
         if (self.real):
             self.register_cancel(order)
-            self.api.delete_order(order.clordid, asynchronous=True)
+            self.api.delete_order(order.clordid, symbol=self.symbol, asynchronous=True, batch=True)
         
         if dex:
             self._delete_order(order)
@@ -587,7 +590,7 @@ class MarketMaker:
                     logging.warning("Order %d received unknown trade event %s",
                                     order.clordid, event)
         else:
-            print("Received %s event" % event)
+            pass
 
         # Update Position
         if (side == "bid"):
@@ -729,9 +732,10 @@ class MarketMaker:
             if (not 'client_order_id' in old_order or
                 not 'amount' in old_order or
                 not 'price' in old_order or
-                    not 'side' in old_order):
+                not 'side' in old_order or
+                not 'market' in old_order):
                 logging.warning(
-                    "Could not find one of ['client_order_id', 'amount', 'side'] in order from partial")
+                    "Could not find one of ['client_order_id', 'amount', 'side', 'market'] in order from partial")
                 return
             client_order_id = old_order['client_order_id']
             amount = old_order['amount']
@@ -744,7 +748,8 @@ class MarketMaker:
 
             print("After Log Cancel")
             self.api.delete_order(
-                old_order['client_order_id'], asynchronous=False)
+                old_order['client_order_id'], symbol=old_order['market'], asynchronous=False, batch=True)
+        self.api.dispatch_batch()
         return
 
     def tickspread_callback(self, data):
@@ -761,9 +766,6 @@ class MarketMaker:
         event = data['event']
         payload = data['payload']
         topic = data['topic']
-        
-        #print("received: ", event, payload)
-        #self.logger.info("event = %s", event)
         
         if (event == "partial"):
             if (topic == "user_data"):
@@ -882,6 +884,8 @@ class MarketMaker:
                 self.fair_price = new_price * Decimal(factor)
                 self.spread = Decimal(0.00002)
                 self.update_orders()
+
+        self.api.dispatch_batch()
         return 0
 
     def ftx_callback(self, data):
@@ -917,7 +921,7 @@ async def main():
     else:
         api = TickSpreadAPI(id_multiple=1000, env=env)
         mmaker = MarketMaker(api, tick_jump=Decimal("0.2"), orders_per_side=30,
-                         order_size=Decimal("0.300"), max_position=Decimal("40.0"))
+                         order_size=Decimal("0.001"), max_position=Decimal("40.0"))
         print("REGISTER")
         api.register('maker%s@tickspread.com' % id, tickspread_password)
         time.sleep(0.3)
@@ -951,7 +955,7 @@ async def main():
     await ftx_api.connect()
     # await ftx_api.subscribe('ticker')
     # await ftx_api.subscribe('orderbook')
-    await ftx_api.subscribe('trades')
+    await ftx_api.subscribe('trades', market=args.ftx_market)
     await ftx_api.start_loop()
     # # logging.info("Done")
     # ftx_api.on_message(mmaker.callback)

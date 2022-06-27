@@ -36,7 +36,7 @@ def ourProcessWorker(queue):
     for i in range(10000):
         try:
             resp = queue.get(block=False, timeout=0.1)
-            print("Received: ", resp)
+            # print("Received: ", resp)
         except Empty:
             time.sleep(0.1)
 
