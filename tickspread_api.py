@@ -192,17 +192,19 @@ async def main():
     logging.basicConfig(level=logging.INFO, filename="test.log")
     
     api = TickSpreadAPI()
-    print(api.register("test@tickspread.com", "tick"))
-    login_status = api.login("matthewericfisher@yahoo.com", "tick")
+    #print(api.register("test@tickspread.com", "tick"))
+    #login_status = api.login("matthewericfisher@yahoo.com", "tick")
     
+    '''
     if (not login_status):
         print("Login failed")
         asyncio.get_event_loop().stop()
         return 1
+    '''
     
     await api.connect()
     await api.subscribe("market_data", {"symbol": "ETH"})
-    await api.subscribe("user_data", {"symbol": "ETH"})
+    #await api.subscribe("user_data", {"symbol": "ETH"})
     api.on_message(lambda source, data: logging.info(data))
 
 if __name__ == "__main__":
