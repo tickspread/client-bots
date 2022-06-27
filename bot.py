@@ -325,6 +325,10 @@ class MarketMaker:
 
         # Market State
         self.last_auction_id = 0
+        
+        self.has_execution_band = False
+        self.execution_band_low = None
+        self.execution_band_high = None
 
         # User State
         self.has_user_balance = False
@@ -488,6 +492,10 @@ class MarketMaker:
             self.logger.warning(
                 "Received active_order, but order %d is in state %d",
                 order.clordid, order_state_to_str(order.state))
+        if (order.state == OrderState.ACKED):
+            self.logger.warning(
+                "Received active_order in order %d at state %d, are we pushing execution_bands?",
+                order.clordid, order_state_to_str(order.state))
         order.state = OrderState.ACTIVE
 
     def exec_remove(self, order):
@@ -593,8 +601,8 @@ class MarketMaker:
     def update_orders(self):
         self.logger.info("update_orders")
         assert (self.active)
-        self.bids.set_new_price(self.fair_price - self.spread)
-        self.asks.set_new_price(self.fair_price + self.spread)
+        self.bids.set_new_price(min(self.fair_price - self.spread, self.execution_band_high))
+        self.asks.set_new_price(max(self.fair_price + self.spread, self.execution_band_low))
 
         # When price falls, cancel top bids. When price rises, cancel top asks.
         self.bids.maybe_cancel_top_orders()
@@ -611,6 +619,26 @@ class MarketMaker:
         # When price falls, cancel bottom asks to maintain the desired number of orders. When price rises, cancel bottom bids.
         self.bids.maybe_cancel_bottom_orders()
         self.asks.maybe_cancel_bottom_orders()
+    
+    def tickspread_market_data_partial(self, payload):
+        print("MARKET DATA PARTIAL")
+        if (not 'execution_band' in payload):
+            logging.warning("No execution_band in market_data partial")
+            return
+            
+        execution_band = payload['execution_band']
+        
+        if (not 'high' in execution_band):
+            logging.warning("No high in execution_band")
+            return
+        
+        if (not 'low' in execution_band):
+            logging.warning("No low in execution_band")
+            return
+        
+        self.execution_band_high = Decimal(execution_band['high'])
+        self.execution_band_low = Decimal(execution_band['low'])
+        self.has_execution_band = True
 
     def tickspread_user_data_partial(self, payload):
         print("USER DATA PARTIAL")
@@ -733,16 +761,21 @@ class MarketMaker:
         event = data['event']
         payload = data['payload']
         topic = data['topic']
-        print("received: ", event, payload)
-        self.logger.info("event = %s", event)
-
-        if (topic == "user_data" and event == "partial"):
-            self.tickspread_user_data_partial(payload)
-            print("OK_1")
-            self.cancel_old_orders()
-            print("FINISH_OK")
-            return 0
-
+        
+        #print("received: ", event, payload)
+        #self.logger.info("event = %s", event)
+        
+        if (event == "partial"):
+            if (topic == "user_data"):
+                self.tickspread_user_data_partial(payload)
+                print("OK_1")                    
+                self.cancel_old_orders()
+                print("FINISH_OK")
+                return 0
+            
+            if (topic == "market_data"):
+                self.tickspread_market_data_partial(payload)
+        
         if (event == "update"):
             if (not 'auction_id' in payload):
                 self.logger.warning(
@@ -755,8 +788,18 @@ class MarketMaker:
                     "Received auction_id = %d, last was %d", auction_id, self.last_auction_id)
                 return 0
             self.last_auction_id = auction_id
-            self.logger.info("AUCTION: %d" % auction_id)
-            pass
+            #self.logger.info("AUCTION: %d" % auction_id)
+            
+            if ('execution_band' in payload):
+                execution_band = payload['execution_band']
+                if (not 'high' in execution_band):
+                    self.logger.warning("No high in execution_band")
+                    return 0
+                if (not 'low' in execution_band):
+                    self.logger.warning("No low in execution_band")
+                    return 0
+                self.execution_band_high = Decimal(execution_band['high'])
+                self.execution_band_low = Decimal(execution_band['low'])
         elif (event == "acknowledge_order" or event == "maker_order"
               or event == "delete_order" or event == "abort_create"
               or event == "active_order" or event == "reject_order"
@@ -825,9 +868,10 @@ class MarketMaker:
         #self.logger.info("new_price = %.2f" % new_price)
         if (new_price != None):
             if (not self.active and
-                self.has_user_balance and
-                self.has_old_orders and
-                    self.has_user_position):
+                    self.has_user_balance and
+                    self.has_old_orders and
+                    self.has_user_position and
+                    self.has_execution_band):
                 self.active = True
                 self.logger.info("Activating: %d (%d/%d)", self.position,
                                  self.bids.available_limit, self.asks.available_limit)
@@ -847,7 +891,7 @@ class MarketMaker:
         return self.common_callback(data)
 
     def callback(self, source, raw_data):
-        self.logger.info("<-%-10s: %s", source, raw_data)
+        #self.logger.info("<-%-10s: %s", source, raw_data)
 
         if isinstance(raw_data, dict):
             data = raw_data
@@ -894,7 +938,7 @@ async def main():
         #huobi_api = HuobiAPI()
 
         await api.connect()
-        # await api.subscribe("market_data", {"symbol": args.market})
+        await api.subscribe("market_data", {"symbol": args.market})
         await api.subscribe("user_data", {"symbol": args.market})
         api.on_message(mmaker.callback)
 
