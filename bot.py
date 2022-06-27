@@ -405,8 +405,6 @@ class MarketMaker:
 
         if (self.real):
             self.register_cancel(order)
-            print("FLAG!!")
-            print(order)
             self.api.delete_order(order.clordid, symbol=self.symbol, asynchronous=True, batch=True)
         
         if dex:
@@ -749,10 +747,6 @@ class MarketMaker:
             self.log_cancel(str_to_side(side), amount, price, client_order_id)
 
             print("After Log Cancel")
-            print("FLAG!!")
-            print(old_order)
-            print(old_order['market'])
-            print("FLAG!!")
             self.api.delete_order(
                 old_order['client_order_id'], symbol=old_order['market'], asynchronous=False, batch=True)
         self.api.dispatch_batch()

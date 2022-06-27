@@ -142,7 +142,6 @@ class TickSpreadAPI:
         while counter < MAX_RETRIES:
             try:
                 counter += 1
-                print("FLAG!!", {"authorization": ("Bearer %s" % self.token), "seq": str(client_order_id)})
                 r = requests.delete(url, headers={"authorization": ("Bearer %s" % self.token), "seq": str(client_order_id)}, json=order, timeout=5.0)
                 json_response = json.loads(r.text)
                 if (r.status_code == 200):
