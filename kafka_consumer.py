@@ -61,7 +61,7 @@ while True:
         continue
 
     #print('Message [%d]:\n' % msg.offset() +'{}'.format(msg.value().decode('utf-8')))
-    print('Message [%d] %s:\t' % (msg.offset(), msg.timestamp()) +'{}'.format(msg.value().decode('utf-8')))
+    print('Message [%d] %s:\t' % (msg.offset(), msg.timestamp()) +'{}'.format(msg.value().decode('utf-8')), flush=True)
 
 
 c.close()
