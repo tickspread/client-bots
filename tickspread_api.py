@@ -10,6 +10,9 @@ import logging
 import time
 import sys
 
+from datetime import datetime
+import time
+
 
 MAX_RETRIES = 5
 
@@ -18,6 +21,8 @@ class TickSpreadAPI:
         self.next_id = int(time.time()*id_multiple)
         self.logger = logger
         self.callbacks = []
+
+        self.operations = []
         #self.host = 'api.tickspread.com'
         
         if env == "dev":
@@ -72,15 +77,23 @@ class TickSpreadAPI:
     def get_next_clordid(self):
         return self.next_id
         
+    def mount_create_order(client_order_id, amount, price, leverage, symbol, side, type, sweeper):
+        return {"client_order_id": client_order_id, "amount": str(amount), "price": str(price), "leverage": leverage, "market": symbol, "side": side, "type": type, "sweeper": sweeper}
+
+    def mount_delete_order(client_order_id, symbol):
+        return {"client_order_id": client_order_id, "market": symbol}
+
     def create_order_sync(self, client_order_id, amount, price, leverage, symbol, side, type, sweeper):
 
-        order = {"client_order_id": client_order_id, "amount": str(amount), "price": str(price), "leverage": leverage, "market": symbol, "side": side, "type": type, "sweeper": sweeper}
+        order = TickSpreadAPI.mount_create_order(client_order_id, amount, price, leverage, symbol, side, type, sweeper)
         
         url = '%s/v2/orders' % self.http_host
         try:
             self.logger.info(order)
+            print(f'{str(time.process_time())} -> client_order_id = {str(client_order_id)}')
             r = requests.post(url, headers={"authorization": (
-                "Bearer %s" % self.token)}, json=order, timeout=5.0)
+                "Bearer %s" % self.token), "seq": str(client_order_id)}, json=order, timeout=5.0)
+            print(f'{str(time.process_time())} <- client_order_id = {str(client_order_id)}')
         except Exception as e:
             print(e, flush=True)
             self.logger.error(e)
@@ -99,10 +112,15 @@ class TickSpreadAPI:
         
         return client_order_id
 
-    def create_order(self, *, client_order_id=0, amount, price, leverage, symbol="ETH", side, type="limit", asynchronous=False, sweeper=0):
+    def create_order(self, *, client_order_id=0, amount, price, leverage, symbol="ETH", side, type="limit", batch=False, asynchronous=False, sweeper=0):
         if (client_order_id == 0):
             client_order_id = self.next_id
             self.next_id += 1
+        if (batch==True):
+            order = TickSpreadAPI.mount_create_order(client_order_id, amount, price, leverage, symbol, side, type, sweeper)
+            order["operation"] = "create"
+            self.operations.append(order)
+            return "OK"
         if (asynchronous==False):    
             return self.create_order_sync(client_order_id,amount,price,leverage,symbol,side,type,sweeper)
         else:
@@ -116,15 +134,15 @@ class TickSpreadAPI:
             #print("%f: ASYNC NEW END" % time.time())
             return "OK"
 
-    def delete_order_sync(self, client_order_id, symbol="ETH"):
+    def delete_order_sync(self, client_order_id, symbol):
         url = '%s/v2/orders' % (self.http_host)
         counter = 0
         r = None
-        order = {"client_order_id": client_order_id, "market": symbol}
+        order = TickSpreadAPI.mount_delete_order(client_order_id, symbol)
         while counter < MAX_RETRIES:
             try:
                 counter += 1
-                r = requests.delete(url, headers={"authorization": ("Bearer %s" % self.token)}, json=order, timeout=5.0)
+                r = requests.delete(url, headers={"authorization": ("Bearer %s" % self.token), "seq": str(client_order_id)}, json=order, timeout=5.0)
                 json_response = json.loads(r.text)
                 if (r.status_code == 200):
                     break
@@ -135,16 +153,41 @@ class TickSpreadAPI:
                 #sys.exit(1)
         return json_response
 
-    def delete_order(self, client_order_id, asynchronous=False):
+    def delete_order(self, client_order_id, symbol="ETH", asynchronous=False, batch=False):
+        if (batch==True):
+            order = TickSpreadAPI.mount_delete_order(client_order_id, symbol)
+            order["operation"] = "delete"
+            self.operations.append(order)
+            return "OK"
         if (asynchronous==False):
-            return self.delete_order_sync(client_order_id)
+            return self.delete_order_sync(client_order_id, symbol)
         else:
             loop = asyncio.get_event_loop()
             loop.run_in_executor(
             None,
             self.delete_order_sync,
-            client_order_id)
+            client_order_id,symbol)
             return "OK"
+
+    def dispatch_batch(self):
+        if self.operations:
+            loop = asyncio.get_event_loop()
+            loop.run_in_executor(None, self.send_batch, self.operations)
+            self.operations = []
+
+    def send_batch(self, operations):
+        url = '%s/v2/orders/batch' % self.http_host
+        batch = {"operations": operations}
+        try:
+            self.logger.info(batch)
+            r = requests.post(url, headers={"authorization": (
+                "Bearer %s" % self.token)}, json=batch, timeout=5.0)
+            print(f'{str(time.process_time())} <- ')
+        except Exception as e:
+            print(e, flush=True)
+            self.logger.error(e)
+            logging.shutdown()
+            sys.exit(1)
     
     async def connect(self):
         self.websocket = await websockets.connect("%s/realtime" % self.ws_host, ping_interval=None)
@@ -176,9 +219,7 @@ class TickSpreadAPI:
         rc = 0
         while rc == 0:
             try:
-                #print("wait")
                 message = await websocket.recv()
-                #print("received message:", message)
             except Exception as e:
                 print("ERROR")
                 self.logger.error(e)
