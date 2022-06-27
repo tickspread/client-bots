@@ -130,9 +130,9 @@ class FTXAPI:
         }}
         await self.websocket.send(json.dumps(login_msg))
 
-    async def subscribe(self, topic):
+    async def subscribe(self, topic, market):
         self.topics.append(topic)
-        data = {'op': 'subscribe', 'channel': topic, 'market': 'ETH-PERP'}
+        data = {'op': 'subscribe', 'channel': topic, 'market': market}
         await self.websocket.send(json.dumps(data))
         
 
@@ -140,12 +140,13 @@ class FTXAPI:
         self.callbacks.append(callback)
         
     async def start_loop(self):
-        asyncio.get_event_loop().create_task(self.loop(self.websocket))
+        asyncio.get_event_loop().create_task(self.loop())
 
-    async def loop(self, websocket):
+    async def loop(self):
         while True:
             try:
-                message = await websocket.recv()
+                print(self.websocket)
+                message = await self.websocket.recv()
                 #message = json.loads(message)
                 for callback in self.callbacks:
                     callback("ftx", message)
@@ -307,38 +308,44 @@ class BinanceAPI:
 
 def test_callback(source, raw_data):
     timestamp = time.time()
+    print("post test_callback", raw_data)
     logging.info("%f %-10s: %s" % (timestamp, source, raw_data))
 
 
 async def main():
-    bybit_api = ByBitAPI()
+    # bybit_api = ByBitAPI()
     ftx_api = FTXAPI()
-    binance_api = BinanceAPI()
-    bitmex_api = BitMEXAPI()
-    huobi_api = HuobiAPI()
+    # binance_api = BinanceAPI()
+    # bitmex_api = BitMEXAPI()
+    # huobi_api = HuobiAPI()
 
-    logging.basicConfig(level=logging.INFO, filename="dump.log")
+    # logging.basicConfig(level=logging.INFO, filename="dump.log")
 
-    await bybit_api.connect()
-    await bybit_api.subscribe()
-    bybit_api.on_message(test_callback)
+    # await bybit_api.connect()
+    # await bybit_api.subscribe()
+    # bybit_api.on_message(test_callback)
 
-    binance_api.subscribe_futures('ETHUSDT')
-    binance_api.on_message(test_callback)
-    binance_api.stop()
-
+    # binance_api.subscribe_futures('ETHUSDT')
+    # binance_api.on_message(test_callback)
+    # binance_api.stop()
+    print("pre ftx_api.connect()")
     await ftx_api.connect()
     # await ftx_api.subscribe('ticker')
     # await ftx_api.subscribe('orderbook')
+    print("pre await ftx_api.subscribe('trades')")
     await ftx_api.subscribe('trades')
+    print("pre ftx_api.on_message(test_callback)")
     ftx_api.on_message(test_callback)
+    print("pre ftx_api.start_loop()")
+    await ftx_api.start_loop()
+    print("post ftx_api.start_loop()")
 
-    await bitmex_api.connect()
-    bitmex_api.on_message(test_callback)
+    # await bitmex_api.connect()
+    # bitmex_api.on_message(test_callback)
 
-    await huobi_api.connect()
-    await huobi_api.subscribe()
-    huobi_api.on_message(test_callback)
+    # await huobi_api.connect()
+    # await huobi_api.subscribe()
+    # huobi_api.on_message(test_callback)
 
 
 if __name__ == "__main__":
