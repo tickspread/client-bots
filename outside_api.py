@@ -131,7 +131,7 @@ class FTXAPI:
         await self.websocket.send(json.dumps(login_msg))
 
     async def subscribe(self, topic, market):
-        self.topics.append(topic)
+        self.topics.append((topic, market))
         data = {'op': 'subscribe', 'channel': topic, 'market': market}
         await self.websocket.send(json.dumps(data))
         
@@ -150,13 +150,6 @@ class FTXAPI:
                 #message = json.loads(message)
                 for callback in self.callbacks:
                     callback("ftx", message)
-                '''
-                if (time.time() - self.last_ping > 10.0):
-                    ping = json_dumps({'op': 'ping'})
-                    print(ping)
-                    await self.websocket.send(ping)
-                    self.last_ping = time.time()
-                '''
             except Exception as e:
                 print("FTX reconnect", e)
                 await self.websocket.close()
@@ -165,8 +158,8 @@ class FTXAPI:
                 await self.connect()
                 if (self.has_login):
                     await self.login()
-                for topic in self.topics:
-                    await self.subscribe(topic)
+                for (topic, market) in self.topics:
+                    await self.subscribe(topic, market)
                 break
             #message = await asyncio.wait_for(websocket.recv(), 5)
 
