@@ -164,7 +164,7 @@ class Sweeper:
                 ftx_api, ftx_fee=0.0005,
                 logger=logging.getLogger(),
                 name="sweeper", version="0.0",
-                leverage=10, max_position=10.0):
+                leverage=10, max_position=1.0):
         self.api = api
         self.ftx_api = ftx_api
         
@@ -173,7 +173,7 @@ class Sweeper:
         self.version = version
         self.leverage = leverage
         self.max_position = max_position
-        self.max_amount = Decimal('5.0000')
+        self.max_amount = Decimal('1.0000')
         
         self.ftx_min_amount = Decimal('0.001')
         self.tick_min_amount = Decimal('0.0001')
@@ -769,7 +769,7 @@ class Sweeper:
 
     def callback(self, source, raw_data):
         #print("CALLBACK")
-        self.logger.info("<-%-10s: %s", source, raw_data)
+        #self.logger.info("<-%-10s: %s", source, raw_data)
 
         if isinstance(raw_data, dict):
             data = raw_data
@@ -808,8 +808,8 @@ async def main():
     await ftx_api.login()
     #await ftx_api.subscribe('ticker')
     #await ftx_api.subscribe('orderbook')
-    await ftx_api.subscribe('trades')
-    await ftx_api.subscribe('orders')
+    await ftx_api.subscribe('trades', market=args.ftx_market)
+    await ftx_api.subscribe('orders', market=args.ftx_market)
     await ftx_api.start_loop()
     
     print("FINISH INIT")
