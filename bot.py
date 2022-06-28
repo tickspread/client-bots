@@ -880,7 +880,7 @@ class MarketMaker:
 
             #self.logger.info("active = %s" % str(self.active))
             if (self.active):
-                factor = Decimal(1) - Decimal(0.01) * self.position / self.max_position
+                factor = Decimal(1) - Decimal(0.003) * self.position / self.max_position
                 self.fair_price = new_price * Decimal(factor)
                 self.spread = Decimal(0.00002)
                 self.update_orders()
@@ -920,8 +920,8 @@ async def main():
         pass
     else:
         api = TickSpreadAPI(id_multiple=1000, env=env)
-        mmaker = MarketMaker(api, tick_jump=Decimal("0.2"), orders_per_side=30,
-                         order_size=Decimal("0.001"), max_position=Decimal("40.0"))
+        mmaker = MarketMaker(api, tick_jump=Decimal("0.2"), orders_per_side=10,
+                         order_size=Decimal("1.5"), max_position=Decimal("40.0"))
         print("REGISTER")
         api.register('maker%s@tickspread.com' % id, tickspread_password)
         time.sleep(0.3)
