@@ -9,7 +9,6 @@ import logging
 from requests import Request, Session, Response
 
 import time
-import numpy as np
 import math
 import sys
 import hmac
@@ -142,24 +141,50 @@ class FTXAPI:
     async def start_loop(self):
         asyncio.get_event_loop().create_task(self.loop())
 
+    async def reconnect(self):
+        try:
+            time.sleep(1)
+            print("FTX reconnect")
+            
+            print("Try connect")
+            await self.connect()
+            print("Try Login")
+            if (self.has_login):
+                await self.login()
+            print("Try Subscribe, self.topics = ", self.topics)
+            topics = self.topics
+            self.topics = []
+            for topic, market in topics:
+                print("Try sub: ", topic, flush=True)
+                await self.subscribe(topic, market)
+                time.sleep(1)
+                print("end 1")
+            print("end 2")
+            return True
+        except Exception as e:
+            print("Reconnect Exception: ", e)
+            # or
+            print(sys.exc_info())
+            return False
+
     async def loop(self):
         while True:
             try:
-                print(self.websocket)
-                message = await self.websocket.recv()
+                print("Wait")
+                message = await asyncio.wait_for(self.websocket.recv(), timeout=10)
+
+                print("Received")
                 #message = json.loads(message)
                 for callback in self.callbacks:
                     callback("ftx", message)
             except Exception as e:
-                print("FTX reconnect", e)
+                print("FTX Loop Exception: ", e)
+                attempts = 0
                 await self.websocket.close()
-                time.sleep(2)
-                
-                await self.connect()
-                if (self.has_login):
-                    await self.login()
-                for (topic, market) in self.topics:
-                    await self.subscribe(topic, market)
+                while await self.reconnect() != True:
+                    attempts += 1
+                    print("Reconnection Failed Attempt Number ", attempts)
+                await self.start_loop()
                 break
             #message = await asyncio.wait_for(websocket.recv(), 5)
 
@@ -326,7 +351,7 @@ async def main():
     # await ftx_api.subscribe('ticker')
     # await ftx_api.subscribe('orderbook')
     print("pre await ftx_api.subscribe('trades')")
-    await ftx_api.subscribe('trades')
+    await ftx_api.subscribe('trades', 'ETH-PERP')
     print("pre ftx_api.on_message(test_callback)")
     ftx_api.on_message(test_callback)
     print("pre ftx_api.start_loop()")
