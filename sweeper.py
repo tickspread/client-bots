@@ -197,7 +197,8 @@ class Sweeper:
 
         self.has_user_position = False
         self.position = 0
-        self.position_total_price = 0
+        self.position_entry_price = 0
+        self.position_liquidation_price = 0
         self.position_total_margin = 0
         self.position_funding = 0
         
@@ -510,15 +511,18 @@ class Sweeper:
             if (not 'market' in position or
                 not 'amount' in position or
                 not 'funding' in position or
+                not 'entry_price' in position or
+                not 'liquidation_price' in position or
                     not 'total_margin' in position):  # ADD or not 'total_price' in position
                 logging.warning(
-                    "Missing at least one of ['amount', 'funding', 'total_margin'] in position element")
+                    "Missing at least one of ['amount', 'funding', 'entry_price', 'liquidation_price', 'total_margin'] in position element")
                 continue
             symbol = position['market']
             amount = Decimal(position['amount'])
             funding = Decimal(position['funding'])
             total_margin = Decimal(position['total_margin'])
-            #total_price = position['total_price']
+            entry_price = Decimal(position['entry_price'])
+            liquidation_price = Decimal(position['liquidation_price'])
 
             if (symbol == self.symbol):
                 assert(self.position == 0)
@@ -526,11 +530,15 @@ class Sweeper:
                 self.bid_available_limit -= amount
                 self.ask_available_limit += amount
 
-                #self.position_total_price = total_price
                 self.position_total_margin = total_margin
                 self.position_funding = funding
+                self.position_entry_price = entry_price
+                self.position_liquidation_price = liquidation_price
                 found_symbol_position = True
-
+                
+                print("Found position. Amount = %s, margin = %s, funding = %s, entry_price = %s, liquidation = %s." % \
+                        (self.position, self.position_total_margin, self.position_funding, self.position_entry_price, self.position_liquidation_price))
+        
         if (not found_symbol_position):
             logging.warning(
                 "Could not find %s position in partial" % self.symbol)
