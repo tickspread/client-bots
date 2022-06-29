@@ -342,7 +342,8 @@ class MarketMaker:
 
         self.has_user_position = False
         self.position = 0
-        self.position_total_price = 0
+        self.position_entry_price = 0
+        self.position_liquidation_price = 0
         self.position_total_margin = 0
         self.position_funding = 0
         
@@ -697,14 +698,19 @@ class MarketMaker:
             if (not 'market' in position or
                 not 'amount' in position or
                 not 'funding' in position or
-                    not 'total_margin' in position):  # ADD or not 'total_price' in position
+                not 'entry_price' in position or
+                not 'liquidation_price' in position or
+                not 'total_margin' in position):
                 logging.warning(
-                    "Missing at least one of ['amount', 'funding', 'total_margin'] in position element")
+                    "Missing at least one of ['amount', 'funding', 'entry_price', 'liquidation_price', 'total_margin'] in position element")
                 continue
             symbol = position['market']
             amount = Decimal(position['amount'])
             funding = Decimal(position['funding'])
             total_margin = Decimal(position['total_margin'])
+            entry_price = Decimal(position['entry_price'])
+            liquidation_price = Decimal(position['liquidation_price'])
+            
             #total_price = position['total_price']
 
             if (symbol == self.symbol):
@@ -712,8 +718,9 @@ class MarketMaker:
                 self.position = amount
                 self.bids.available_limit -= amount
                 self.asks.available_limit += amount
-
-                #self.position_total_price = total_price
+                
+                self.position_entry_price = entry_price
+                self.position_liquidation_price = liquidation_price
                 self.position_total_margin = total_margin
                 self.position_funding = funding
                 found_symbol_position = True
