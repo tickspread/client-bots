@@ -52,6 +52,7 @@ class FTXAPI:
             raise
         else:
             if not data['success']:
+                print(data)
                 raise Exception(data['error'])
             if type(data['result']) != list: 
                 data['result']['success'] = data['success']
@@ -109,6 +110,9 @@ class FTXAPI:
             'clientId': client_id,
             'rejectAfterTs': reject_after_ts
         })
+
+    def get_positions(self, show_avg_price: bool = False) -> List[dict]:
+        return self._get('positions', {'showAvgPrice': show_avg_price})
 
     async def connect(self):
         self.websocket = await websockets.connect(self.host, ping_interval=None)
