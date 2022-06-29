@@ -120,8 +120,9 @@ class CancelState(Enum):
 
 class SweeperState(Enum):
     WAITING = 0
-    SWEEPING = 1
-    RETURNING = 2
+    SWEEPING = 1 	# Order sent to FTX, waiting reply on their websocket
+    RETURNING = 2	# Got fill/expiration from FTX, sent sweeper order to Tick, waiting response
+    FINISHING = 3 	# Got sweeper_fill, waiting for position update
 
 def order_cancel_to_str(cancel):
     if (cancel == CancelState.NORMAL):
@@ -454,8 +455,92 @@ class Sweeper:
             self.position -= execution_amount
             self.bid_available_limit += execution_amount
 
+    def update_ftx_position(self, close_net_difference=False):
+        found = False
+        print("Verify FTX position")
+        initial_time = time.time()
+        ftx_positions = self.ftx_api.get_positions()
+        for element in ftx_positions:
+            if 'future' in element:
+                if element['future'] == self.ftx_market:
+                    print("FOUND FTX POSITION")
+                    print(element)
+                    
+                    self.ftx_position = Decimal(element['netSize']).quantize(self.ftx_min_amount)
+                    
+                    print("\nComparing %s @ FTX to %s @ TickSpread" % (self.ftx_market, self.symbol))
+                    print("expected:", -self.position, "vs", self.ftx_position, time.time() - initial_time)
+                    
+                    position_diff = -self.position - self.ftx_position
+                    amount = position_diff.quantize(self.ftx_min_amount).copy_abs()
+                    
+                    if (amount > 0):
+                    
+                        if (close_net_difference):
+                            reduce_order_side = "BUYING" if (position_diff > 0) else "SELLING"
+                            side = "buy" if (position_diff > 0) else "sell"
 
+                            answer = input("\nWould you like to close FTX position by\n %s %s %s?\nType YES to proceed: " % (reduce_order_side, position_diff.copy_abs(),  self.ftx_market))
+                            if (answer == "YES"):
+                                limit_price = input("Type limit price: ")
 
+                                self.ftx_api.place_order(market=self.ftx_market, side=side, price=limit_price,
+                                            size=amount, ioc=True)
+                                
+                                print("Order placed.")
+                        
+                        print("Exiting")
+                        sys.exit(0)
+                            
+                    
+                    found = True
+                    break
+        
+        if (not found):
+            assert(self.position.copy_abs() < self.ftx_min_amount)
+        
+    def find_user_position(self, positions, partial=False):
+        for position in positions:
+            if (not 'market' in position or
+                not 'amount' in position or
+                not 'funding' in position or
+                not 'entry_price' in position or
+                not 'liquidation_price' in position or
+                    not 'total_margin' in position):  # ADD or not 'total_price' in position
+                logging.warning(
+                    "Missing at least one of ['amount', 'funding', 'entry_price', 'liquidation_price', 'total_margin'] in position element")
+                continue
+            symbol = position['market']
+            amount = Decimal(position['amount'])
+            funding = Decimal(position['funding'])
+            total_margin = Decimal(position['total_margin'])
+            entry_price = Decimal(position['entry_price'])
+            liquidation_price = Decimal(position['liquidation_price'])
+
+            if (symbol == self.symbol):
+                assert(self.position == 0)
+                self.position = amount
+                self.bid_available_limit -= amount
+                self.ask_available_limit += amount
+
+                self.position_total_margin = total_margin
+                self.position_funding = funding
+                self.position_entry_price = entry_price
+                self.position_liquidation_price = liquidation_price
+                found_symbol_position = True
+
+                print("Found position. Amount = %s, margin = %s, funding = %s, entry_price = %s, liquidation = %s." % \
+                        (self.position, self.position_total_margin, self.position_funding, self.position_entry_price, self.position_liquidation_price))
+                
+                if (partial):
+                    self.update_ftx_position(close_net_difference=True)
+                else:
+                    assert(self.sweeper_state == SweeperState.FINISHING)
+                    if (self.sweeper_state == SweeperState.FINISHING):
+                        self.sweeper_state = SweeperState.WAITING
+                    self.update_ftx_position()
+        return found_symbol_position
+        
     def tickspread_user_data_partial(self, payload):
         print("USER DATA PARTIAL")
         if (not 'balance' in payload):
@@ -506,38 +591,7 @@ class Sweeper:
             print("Found %d old orders, leaving" % len(self.old_orders))
             sys.exit(0)
         
-        found_symbol_position = False
-        for position in positions:
-            if (not 'market' in position or
-                not 'amount' in position or
-                not 'funding' in position or
-                not 'entry_price' in position or
-                not 'liquidation_price' in position or
-                    not 'total_margin' in position):  # ADD or not 'total_price' in position
-                logging.warning(
-                    "Missing at least one of ['amount', 'funding', 'entry_price', 'liquidation_price', 'total_margin'] in position element")
-                continue
-            symbol = position['market']
-            amount = Decimal(position['amount'])
-            funding = Decimal(position['funding'])
-            total_margin = Decimal(position['total_margin'])
-            entry_price = Decimal(position['entry_price'])
-            liquidation_price = Decimal(position['liquidation_price'])
-
-            if (symbol == self.symbol):
-                assert(self.position == 0)
-                self.position = amount
-                self.bid_available_limit -= amount
-                self.ask_available_limit += amount
-
-                self.position_total_margin = total_margin
-                self.position_funding = funding
-                self.position_entry_price = entry_price
-                self.position_liquidation_price = liquidation_price
-                found_symbol_position = True
-                
-                print("Found position. Amount = %s, margin = %s, funding = %s, entry_price = %s, liquidation = %s." % \
-                        (self.position, self.position_total_margin, self.position_funding, self.position_entry_price, self.position_liquidation_price))
+        found_symbol_position = self.find_user_position(positions, partial=True)
         
         if (not found_symbol_position):
             logging.warning(
@@ -622,7 +676,7 @@ class Sweeper:
         print("SWEEPER FILL found")
         #TODO add more checks in the future
         assert(self.sweeper_state == SweeperState.RETURNING)
-        self.sweeper_state = SweeperState.WAITING
+        self.sweeper_state = SweeperState.FINISHING
 
     def tickspread_callback(self, data):
         if (not 'event' in data):
@@ -642,6 +696,10 @@ class Sweeper:
         #if (topic != "market_data"):
         #    self.logger.info("<-%-10s: %s", "tick", data)
         
+        if (topic == "user_data" and event != "partial"):
+            # Check for position update
+            if 'positions' in data:
+                self.find_user_position(data['positions'])
         if (topic == "user_data" and event == "partial"):
             self.tickspread_user_data_partial(payload)
             print("FINISH_OK")
