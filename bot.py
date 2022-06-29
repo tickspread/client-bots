@@ -159,9 +159,9 @@ class Order:
         if (self.state == OrderState.EMPTY):
             return ""
         else:
-            return "%s %d/%d @ %d (%d) [%s]%s" % (
+            return "%s %s/%s @ %s (%s) [%s]%s" % (
                 side_to_str(self.side), self.amount_left, self.total_amount,
-                self.price, self.clordid, order_state_to_str(self.state), order_cancel_to_str(self.cancel))
+                str(self.price), str(self.clordid), order_state_to_str(self.state), order_cancel_to_str(self.cancel))
 
 
 class MarketMakerSide:
