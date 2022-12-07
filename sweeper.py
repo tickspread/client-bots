@@ -227,6 +227,7 @@ class Sweeper:
         self.residual_position = Decimal(0)
         self.tick_position = Decimal(0)
         self.ftx_position = Decimal(0)
+        self.expected_ftx_position = Decimal(0)
         self.max_position = Decimal(max_position)
 
     def log_new(self, side, amount, price, clordid):
@@ -468,19 +469,19 @@ class Sweeper:
                     
                     self.ftx_position = Decimal(element['netSize']).quantize(self.ftx_min_amount)
                     
-                    print("\nComparing %s @ FTX to %s @ TickSpread" % (self.ftx_market, self.symbol))
-                    print("expected:", -self.position, "vs", self.ftx_position, time.time() - initial_time)
+                    assert(self.ftx_position == self.expected_ftx_position)
                     
-                    position_diff = -self.position - self.ftx_position
-                    amount = position_diff.quantize(self.ftx_min_amount).copy_abs()
+                    print("\nComparing %s @ FTX to %s @ TickSpread (FTX position rtt = %.3f)" % (self.ftx_market, self.symbol, time.time() - initial_time))
+                    
+                    self.residual_position = self.position + self.ftx_position
+                    amount = (-self.residual_position).quantize(self.ftx_min_amount).copy_abs()
                     
                     if (amount > 0):
-                    
                         if (close_net_difference):
-                            reduce_order_side = "BUYING" if (position_diff > 0) else "SELLING"
-                            side = "buy" if (position_diff > 0) else "sell"
+                            reduce_order_side = "BUYING" if (self.residual_position < 0) else "SELLING"
+                            side = "buy" if (self.residual_position < 0) else "sell"
 
-                            answer = input("\nWould you like to close FTX position by\n %s %s %s?\nType YES to proceed: " % (reduce_order_side, position_diff.copy_abs(),  self.ftx_market))
+                            answer = input("\nWould you like to close FTX position by\n %s %s %s?\nType YES to proceed: " % (reduce_order_side, self.residual_position.copy_abs(),  self.ftx_market))
                             if (answer == "YES"):
                                 limit_price = input("Type limit price: ")
 
@@ -497,8 +498,9 @@ class Sweeper:
                     break
         
         if (not found):
-            assert(self.position.copy_abs() < self.ftx_min_amount)
-        
+            assert(self.position.copy_abs() <= self.ftx_min_amount)
+            self.residual_position = self.position + self.ftx_position
+    
     def find_user_position(self, positions, partial=False):
         for position in positions:
             if (not 'market' in position or
@@ -627,31 +629,20 @@ class Sweeper:
         if (amount == 0):
             # No need to send any order to FTX.
             # Instead return immediately a complete fill to TickSpread
-            
-            if (data['side'] == 'bid'):
-                return_amount = max(self.residual_position, self.sweeper_max_amount).quantize(self.tick_min_amount)
-            else:
-                return_amount = max(-self.residual_position, self.sweeper_max_amount).quantize(self.tick_min_amount)
+                        
+            return_amount = min(self.sweeper_max_amount, self.max_amount).quantize(self.tick_min_amount)
 
-            if (return_amount < 0):
-                return_amount = 0
-            
             if (data['side'] == 'bid'):
                 print("BID")
                 # Order side is reversed
                 self.send_new(self.sell_order, amount=return_amount, price=self.sweeper_limit_price, sweeper=1)
                 #self.send_new(self.sell_order, amount=self.sweeper_max_amount, price=self.sweeper_limit_price, sweeper=1)
-                #TODO move position calculation to sweeper_fill processing
-                self.residual_position -= return_amount
             else:
                 print("ASK")
                 # Order side is reversed
                 self.send_new(self.buy_order, amount=return_amount, price=self.sweeper_limit_price, sweeper=1)
-                #TODO move position calculation to sweeper_fill processing
-                self.residual_position += return_amount
             
             self.sweeper_state = SweeperState.RETURNING
-            print("residual_position = %s" % self.residual_position)
             print("SWEEPER_ORDER sent")
         else:
             self.sweeper_order_id += 1
@@ -669,7 +660,6 @@ class Sweeper:
                                         client_id=str(self.sweeper_order_id))
             
             self.sweeper_state = SweeperState.SWEEPING
-            print("residual_position = %s" % self.residual_position)
             print("EXTERNAL_ORDER sent")
 
     def process_sweeper_fill(self, data):
