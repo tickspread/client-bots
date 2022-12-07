@@ -56,7 +56,7 @@ parser.add_argument('--dex', dest='dex', default="false",
 parser.add_argument('--tickspread_password', dest='tickspread_password', default="maker",
                     help='set the tickspread_password to login (default: maker)')
 parser.add_argument('--market', dest='market', required=True)
-parser.add_argument('--ftx_market', dest='ftx_market', required=True)
+parser.add_argument('--external_market', dest='external_market', required=True)
 parser.add_argument('--money_asset', dest='money_asset', required=True)
 
 args = parser.parse_args()
@@ -927,8 +927,24 @@ async def main():
         pass
     else:
         api = TickSpreadAPI(id_multiple=1000, env=env)
-        mmaker = MarketMaker(api, tick_jump=Decimal("0.2"), orders_per_side=10,
-                         order_size=Decimal("1.5"), max_position=Decimal("40.0"))
+        # mmaker = MarketMaker(api, tick_jump=Decimal("0.2"), orders_per_side=10,
+        #                  order_size=Decimal("1.5"), max_position=Decimal("40.0"))
+
+        if args.market == "ETH":
+            mmaker = MarketMaker(api, tick_jump=Decimal("0.2"), orders_per_side=10,
+                            order_size=Decimal("1.5"), max_position=Decimal("40.0"))
+
+        if args.market == "ETH-TEST":
+            mmaker = MarketMaker(api, tick_jump=Decimal("0.2"), orders_per_side=10,
+                            order_size=Decimal("0.001"), max_position=Decimal("40.0"))
+
+        if args.market == "BTC-TEST" or args.market == "BTC-PERP":
+            mmaker = MarketMaker(api, tick_jump=Decimal("1.0"), orders_per_side=10,
+                            order_size=Decimal("0.001"), max_position=Decimal("4.0"))
+
+        if args.market == "BTC" or args.market == "BTC-PERP":
+            mmaker = MarketMaker(api, tick_jump=Decimal("1.0"), orders_per_side=10,
+                            order_size=Decimal("0.07"), max_position=Decimal("4.0"))
         print("REGISTER")
         api.register('maker%s@tickspread.com' % id, tickspread_password)
         time.sleep(0.3)
@@ -957,13 +973,14 @@ async def main():
     # await bybit_api.subscribe()
     # bybit_api.on_message(mmaker.callback)
 
-    ftx_api = FTXAPI()
-    ftx_api.on_message(mmaker.callback)
-    await ftx_api.connect()
+    # ftx_api = FTXAPI()
+    # ftx_api.on_message(mmaker.callback)
+    # await ftx_api.connect()
     # await ftx_api.subscribe('ticker')
     # await ftx_api.subscribe('orderbook')
-    await ftx_api.subscribe('trades', market=args.ftx_market)
-    await ftx_api.start_loop()
+    # await ftx_api.subscribe('trades', market=args.external_market)
+    # await ftx_api.start_loop()
+
     # # logging.info("Done")
     # ftx_api.on_message(mmaker.callback)
 
@@ -974,8 +991,10 @@ async def main():
     # if dex == True:
     #     binance_api.subscribe_futures('ETHUSDT')
     # else:
-    #     binance_api.subscribe_futures('ETHUSDT')
-    # binance_api.on_message(mmaker.callback)
+
+    binance_api = BinanceAPI()
+    binance_api.subscribe_futures(args.external_market)
+    binance_api.on_message(mmaker.callback)
 
     # await bitmex_api.connect()
     # bitmex_api.on_message(mmaker.callback)

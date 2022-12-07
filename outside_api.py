@@ -16,8 +16,8 @@ import hmac
 import queue
 import urllib.parse
 
-#from binance.client import AsyncClient
-#from binance import BinanceSocketManager, ThreadedWebsocketManager
+from binance.client import AsyncClient
+from binance import BinanceSocketManager, ThreadedWebsocketManager
 
 class FTXAPI:
     def __init__(self, auth=None, logger=logging.getLogger()):
