@@ -15,7 +15,7 @@ import hmac
 
 import queue
 import urllib.parse
-
+import traceback
 from binance.client import AsyncClient
 from binance import BinanceSocketManager, ThreadedWebsocketManager
 
@@ -311,23 +311,60 @@ class BinanceAPI:
                 try:
                     print("wait bin")
                     # self.logger.info("wait bin")
-                    data = await asyncio.wait_for(ts.recv(), 5)
+                    data = await asyncio.wait_for(ts.recv(), 10)
                     print("recieved bin")
                     # self.logger.info("recieved bin")
+                    
                     if data != None:
                         for callback in self.callbacks:
                             callback('binance-s', data)
                 except Exception as e:
                     print("retry binance")
+                    traceback.print_stack()
                     print(e)
                     # self.logger.warning("retry binance")
                     self.subscribe_futures(symbol)
                     break
 
-    # def stop(self):
-    #     self.bm.stop()
+class KuCoinAPI:
+    def __init__(self, logger=None, public_token=None):
+        self.websocket_uri = f"wss://ws-api-spot.kucoin.com/?token={public_token}"
+        self.logger = logger
+        self.callbacks = []
+        self.event_loop = asyncio.get_event_loop()
+        self.queue = asyncio.Queue()
 
+    def subscribe_index_price(self, symbol):
+        self.event_loop.create_task(self.loop(symbol))
 
+    def on_message(self, callback):
+        self.callbacks.append(callback)
+
+    async def loop(self, symbol):
+        while True:
+            try:
+                async with websockets.connect(self.websocket_uri) as websocket:
+                    subscribe_message = {
+                        "id": "1",
+                        "type": "subscribe",
+                        "topic": f"/indicator/index:{symbol}",
+                        "response": True
+                    }
+                    await websocket.send(json.dumps(subscribe_message))
+
+                    while True:
+                        response = await websocket.recv()
+                        data = json.loads(response)
+
+                        if data["type"] == "message" and data["subject"] == "tick":
+                            for callback in self.callbacks:
+                                callback('kucoin', data)
+            except Exception as e:
+                if self.logger:
+                    self.logger.warning("retry kucoin")
+                print("retry kucoin")
+                print(e)
+                self.subscribe_index_price(symbol)
 def test_callback(source, raw_data):
     timestamp = time.time()
     print("post test_callback", raw_data)

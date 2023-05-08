@@ -887,9 +887,9 @@ class MarketMaker:
 
             #self.logger.info("active = %s" % str(self.active))
             if (self.active):
-                factor = Decimal(1) - Decimal(0.003) * self.position / self.max_position
+                factor = Decimal(1) - Decimal(0.001) * self.position / self.max_position
                 self.fair_price = new_price * Decimal(factor)
-                self.spread = Decimal(0.00002)
+                self.spread = Decimal(0.00010)
                 self.update_orders()
 
         self.api.dispatch_batch()
@@ -931,8 +931,8 @@ async def main():
         #                  order_size=Decimal("1.5"), max_position=Decimal("40.0"))
 
         if args.market == "ETH":
-            mmaker = MarketMaker(api, tick_jump=Decimal("0.2"), orders_per_side=10,
-                            order_size=Decimal("1.5"), max_position=Decimal("40.0"))
+            mmaker = MarketMaker(api, tick_jump=Decimal("0.1"), orders_per_side=10,
+                            order_size=Decimal("2.0"), max_position=Decimal("50.0"))
 
         if args.market == "ETH-TEST":
             mmaker = MarketMaker(api, tick_jump=Decimal("0.2"), orders_per_side=10,
@@ -944,7 +944,7 @@ async def main():
 
         if args.market == "BTC" or args.market == "BTC-PERP":
             mmaker = MarketMaker(api, tick_jump=Decimal("1.0"), orders_per_side=10,
-                            order_size=Decimal("0.07"), max_position=Decimal("4.0"))
+                            order_size=Decimal("0.08"), max_position=Decimal("6.0"))
         print("REGISTER")
         api.register('maker%s@tickspread.com' % id, tickspread_password)
         time.sleep(0.3)
@@ -984,13 +984,13 @@ async def main():
     # # logging.info("Done")
     # ftx_api.on_message(mmaker.callback)
 
-    # binance_api = BinanceAPI(
-    #     os.getenv('BINANCE_KEY'),
-    #     os.getenv('BINANCE_SECRET'))
-
     # if dex == True:
     #     binance_api.subscribe_futures('ETHUSDT')
     # else:
+
+    # binance_api = BinanceAPI(
+    #     os.getenv('BINANCE_KEY'),
+    #     os.getenv('BINANCE_SECRET'))
 
     binance_api = BinanceAPI()
     binance_api.subscribe_futures(args.external_market)
