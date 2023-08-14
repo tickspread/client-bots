@@ -18,6 +18,8 @@ import urllib.parse
 import traceback
 from binance.client import AsyncClient
 from binance import BinanceSocketManager, ThreadedWebsocketManager
+from pythclient.pythaccounts import PythPriceAccount, PythPriceStatus
+from pythclient.solana import SolanaClient, SolanaPublicKey, PYTHNET_HTTP_ENDPOINT, PYTHNET_WS_ENDPOINT
 
 class FTXAPI:
     def __init__(self, auth=None, logger=logging.getLogger()):
@@ -365,6 +367,55 @@ class KuCoinAPI:
                 print("retry kucoin")
                 print(e)
                 self.subscribe_index_price(symbol)
+
+class PythGoldAPI:
+    def __init__(self, logger=None, public_token=None):
+        self.logger = logger
+        self.callbacks = []
+        self.event_loop = asyncio.get_event_loop()
+        self.queue = asyncio.Queue()
+
+    def subscribe_index_price(self, symbol):
+        self.event_loop.create_task(self.loop(symbol))
+
+    def on_message(self, callback):
+        self.callbacks.append(callback)
+
+    async def get_gold_price(self):
+        # pythnet GOLD/USD price account key (available on pyth.network website)
+        account_key = SolanaPublicKey("8y3WWjvmSmVGWVKH1rCA7VTRmuU7QbJ9axafSsBX5FcD")
+        solana_client = SolanaClient(endpoint=PYTHNET_HTTP_ENDPOINT, ws_endpoint=PYTHNET_WS_ENDPOINT)
+        price: PythPriceAccount = PythPriceAccount(account_key, solana_client)
+
+        await price.update()
+        data =  { "status": "fail" }
+
+        price_status = price.aggregate_price_status
+        if price_status == PythPriceStatus.TRADING:
+            # Sample output: "DOGE/USD is 0.141455 ± 7.4e-05"
+            print("GOLD/USD is", price.aggregate_price, "±", price.aggregate_price_confidence_interval)
+            data =  { "status": "ok", "price": price.aggregate_price, "confidence":price.aggregate_price_confidence_interval }
+        else:
+            print("Price is not valid now. Status is", price_status)
+
+        await solana_client.close()
+        return data
+
+    async def loop(self, symbol):
+        while True:
+            try:
+                while True:
+                    data = await get_gold_price()
+
+                    for callback in self.callbacks:
+                        callback('pyth', data)
+            except Exception as e:
+                if self.logger:
+                    self.logger.warning("retry Pyth")
+                print("retry Pyth")
+                print(e)
+                self.subscribe_index_price(symbol)
+
 def test_callback(source, raw_data):
     timestamp = time.time()
     print("post test_callback", raw_data)
