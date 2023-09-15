@@ -41,7 +41,7 @@ import logging.handlers
 from decimal import Decimal
 from tickspread_api import TickSpreadAPI
 # from python_loopring.tickspread_dex import TickSpreadDex
-from outside_api import ByBitAPI, FTXAPI, BinanceAPI, BitMEXAPI, HuobiAPI
+from outside_api import ByBitAPI, FTXAPI, BinanceAPI, BitMEXAPI, HuobiAPI, PythXauAPI
 
 parser = argparse.ArgumentParser(
     description='Run a market maker bot on TickSpread exchange.')
@@ -625,8 +625,8 @@ class MarketMaker:
         self.asks.maybe_cancel_bottom_orders()
     
     def tickspread_market_data_partial(self, payload):
-        print("MARKET DATA PARTIAL")
-        if (not 'execution_band' in payload):
+        print("MARKET DATA PARTIAL: ", payload)
+        if (not 'execution_band' in payload or payload['execution_band'] == None):
             logging.warning("No execution_band in market_data partial")
             return
             
@@ -901,6 +901,9 @@ class MarketMaker:
     def binance_s_callback(self, data):
         return self.common_callback(data)
 
+    def pyth_xau_callback(self, data):
+        return self.common_callback(data)
+
     def callback(self, source, raw_data):
         #self.logger.info("<-%-10s: %s", source, raw_data)
 
@@ -916,6 +919,8 @@ class MarketMaker:
             rc = self.ftx_callback(data)
         elif (source == 'binance-s'):
             rc = self.binance_s_callback(data)
+        elif (source == 'pyth'):
+            rc = self.pyth_xau_callback(data)
         return rc
 
 
@@ -930,17 +935,25 @@ async def main():
         # mmaker = MarketMaker(api, tick_jump=Decimal("0.2"), orders_per_side=10,
         #                  order_size=Decimal("1.5"), max_position=Decimal("40.0"))
 
+        if args.market == "XAU-TEST":
+            mmaker = MarketMaker(api, tick_jump=Decimal("0.1"), orders_per_side=10,
+                            order_size=Decimal("0.01"), max_position=Decimal("50.0"))
+
         if args.market == "ETH":
             mmaker = MarketMaker(api, tick_jump=Decimal("0.1"), orders_per_side=10,
                             order_size=Decimal("2.0"), max_position=Decimal("50.0"))
 
         if args.market == "ETH-TEST":
+            # mmaker = MarketMaker(api, tick_jump=Decimal("0.2"), orders_per_side=8,
+            #                 order_size=Decimal("1.5"), max_position=Decimal("40.0"))
             mmaker = MarketMaker(api, tick_jump=Decimal("0.2"), orders_per_side=10,
-                            order_size=Decimal("0.001"), max_position=Decimal("40.0"))
+                            order_size=Decimal("1.2"), max_position=Decimal("1.0"))
+            # mmaker = MarketMaker(api, tick_jump=Decimal("0.2"), orders_per_side=0,
+            #                 order_size=Decimal("0.2"), max_position=Decimal("1.0"))
 
         if args.market == "BTC-TEST" or args.market == "BTC-PERP":
-            mmaker = MarketMaker(api, tick_jump=Decimal("1.0"), orders_per_side=10,
-                            order_size=Decimal("0.001"), max_position=Decimal("4.0"))
+            mmaker = MarketMaker(api, tick_jump=Decimal("1.0"), orders_per_side=8,
+                            order_size=Decimal("1.5"), max_position=Decimal("4.0"))
 
         if args.market == "BTC" or args.market == "BTC-PERP":
             mmaker = MarketMaker(api, tick_jump=Decimal("1.0"), orders_per_side=10,
@@ -992,9 +1005,14 @@ async def main():
     #     os.getenv('BINANCE_KEY'),
     #     os.getenv('BINANCE_SECRET'))
 
-    binance_api = BinanceAPI()
-    binance_api.subscribe_futures(args.external_market)
-    binance_api.on_message(mmaker.callback)
+    if args.external_market == 'XAU':
+        binance_api = PythXauAPI()
+        binance_api.subscribe_index_price(args.external_market)
+        binance_api.on_message(mmaker.callback)
+    else:
+        binance_api = BinanceAPI()
+        binance_api.subscribe_futures(args.external_market)
+        binance_api.on_message(mmaker.callback)
 
     # await bitmex_api.connect()
     # bitmex_api.on_message(mmaker.callback)

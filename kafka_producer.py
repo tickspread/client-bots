@@ -14,20 +14,98 @@ key = 'transfer_balance'
 
 
 messages = [
-    {
-        "event": "transfer_balance",
-        "user_group_id": 0,
-        "user_id_from": 1,
-        "user_id_to": 0,
-        "asset": "testUSD",
-        "asset_id": 7,
-        "balance_amount": 6000000000,
-        "asset_precision": 6
-    },
+    #     {
+    #     "event": "transfer_balance",
+    #     "user_group_id": 0,
+    #     "user_id_from": 65285,
+    #     "user_id_to": 3,
+    #     "asset": "testUSD",
+    #     "asset_id": 8,
+    #     "balance_amount": 4000000000,
+    #     "asset_precision": 6
+    # },
+    #     {
+    #     "event": "transfer_balance",
+    #     "user_group_id": 0,
+    #     "user_id_from": 65285,
+    #     "user_id_to": 2,
+    #     "asset": "testUSD",
+    #     "asset_id": 8,
+    #     "balance_amount": 2000000000,
+    #     "asset_precision": 6
+    # },
+#     {
+#     "event": "transfer_balance",
+#     "user_group_id": 0,
+#     "user_id_from": 3,
+#     "user_id_to": 6,
+#     "asset": "testUSD",
+#     "asset_id": 8,
+#     "balance_amount": 150000000,
+#     "asset_precision": 6
+#    },
+#     {
+#     "event": "transfer_balance",
+#     "user_group_id": 0,
+#     "user_id_from": 3,
+#     "user_id_to": 7,
+#     "asset": "testUSD",
+#     "asset_id": 8,
+#     "balance_amount": 100000000,
+#     "asset_precision": 6
+#    },
+#     {
+#     "event": "transfer_balance",
+#     "user_group_id": 0,
+#     "user_id_from": 3,
+#     "user_id_to": 5,
+#     "asset": "testUSD",
+#     "asset_id": 8,
+#     "balance_amount": 100000000,
+#     "asset_precision": 6
+#    },
+#     {
+#     "event":"convert_stable_request",
+#     "user_group_id":0,
+#     "user_id":65285,
+#     "dest_user_group_id":0,
+#     "dest_user_id":65286,
+#     "asset":"testUSDC",
+#     "asset_id": 10,
+#     "asset_precision": 6,
+#     "dest_asset":"testUSD",
+#     "dest_asset_id": 8,
+#     "dest_asset_precision": 6,
+#     "balance_amount": 10000000000
+# },
+# {
+#     "event": "convert_stable_request",
+#     "user_group_id": 0,
+#     "user_id": 65285,
+#     "asset": "USDC",
+#     "asset_id": 2,
+#     "asset_precision": 6,
+#     "balance_amount": 1000000000000,
+#     "dest_user_group_id": 0,
+#     "dest_user_id": 65286,
+#     "dest_asset": "USD",
+#     "dest_asset_id": 1
+# }
+    # {
+    #     "event": "transfer_balance",
+    #     "user_group_id": 0,
+    #     "user_id_from": 1,
+    #     "user_id_to": 0,
+    #     "asset": "testUSD",
+    #     "asset_id": 7,
+    #     "balance_amount": 6000000000,
+    #     "asset_precision": 6
+    # },
 ]
 
 for value in messages:
-    producer.produce(topic, json.dumps(value), key)
+    producer.produce(topic, json.dumps(value), key, 0)
+    print(value)
 producer.flush()
 
 

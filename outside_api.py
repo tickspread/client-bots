@@ -368,7 +368,7 @@ class KuCoinAPI:
                 print(e)
                 self.subscribe_index_price(symbol)
 
-class PythGoldAPI:
+class PythXauAPI:
     def __init__(self, logger=None, public_token=None):
         self.logger = logger
         self.callbacks = []
@@ -393,8 +393,8 @@ class PythGoldAPI:
         price_status = price.aggregate_price_status
         if price_status == PythPriceStatus.TRADING:
             # Sample output: "DOGE/USD is 0.141455 ± 7.4e-05"
-            print("GOLD/USD is", price.aggregate_price, "±", price.aggregate_price_confidence_interval)
-            data =  { "status": "ok", "price": price.aggregate_price, "confidence":price.aggregate_price_confidence_interval }
+            #print("GOLD/USD is", price.aggregate_price, "±", price.aggregate_price_confidence_interval)
+            data =  { "status": "ok", "p": price.aggregate_price, "confidence":price.aggregate_price_confidence_interval }
         else:
             print("Price is not valid now. Status is", price_status)
 
@@ -405,7 +405,7 @@ class PythGoldAPI:
         while True:
             try:
                 while True:
-                    data = await get_gold_price()
+                    data = await self.get_gold_price()
 
                     for callback in self.callbacks:
                         callback('pyth', data)
@@ -424,7 +424,8 @@ def test_callback(source, raw_data):
 
 async def main():
     # bybit_api = ByBitAPI()
-    ftx_api = FTXAPI()
+    # ftx_api = FTXAPI()
+    ftx_api = PythXauAPI()
     # binance_api = BinanceAPI()
     # bitmex_api = BitMEXAPI()
     # huobi_api = HuobiAPI()
@@ -438,17 +439,18 @@ async def main():
     # binance_api.subscribe_futures('ETHUSDT')
     # binance_api.on_message(test_callback)
     # binance_api.stop()
-    print("pre ftx_api.connect()")
-    await ftx_api.connect()
-    # await ftx_api.subscribe('ticker')
+    #print("pre ftx_api.connect()")
+    #await ftx_api.connect()
+    ftx_api.on_message(open_xau_market);
+    ftx_api.subscribe_index_price('XAU-TEST')
     # await ftx_api.subscribe('orderbook')
-    print("pre await ftx_api.subscribe('trades')")
-    await ftx_api.subscribe('trades', 'ETH-PERP')
-    print("pre ftx_api.on_message(test_callback)")
-    ftx_api.on_message(test_callback)
-    print("pre ftx_api.start_loop()")
-    await ftx_api.start_loop()
-    print("post ftx_api.start_loop()")
+    #print("pre await ftx_api.subscribe('trades')")
+    #await ftx_api.subscribe('trades', 'ETH-PERP')
+    #print("pre ftx_api.on_message(test_callback)")
+    #ftx_api.on_message(test_callback)
+    #print("pre ftx_api.start_loop()")
+    #await ftx_api.start_loop()
+    #print("post ftx_api.start_loop()")
 
     # await bitmex_api.connect()
     # bitmex_api.on_message(test_callback)
