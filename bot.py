@@ -2,7 +2,7 @@
 """Example TickSpread Bot
 
 This module gives an example market-making bot that listens to market-data
-feeds from external exchanges (Binance, FTX, Huobi, BitMEX and Bybit) and
+feeds from external exchanges (Binance, Huobi, BitMEX and Bybit) and
 puts orders at TickSpread.
 
 The bot controls the state for each order, listening to update at the
@@ -41,7 +41,7 @@ import logging.handlers
 from decimal import Decimal
 from tickspread_api import TickSpreadAPI
 # from python_loopring.tickspread_dex import TickSpreadDex
-from outside_api import ByBitAPI, FTXAPI, BinanceAPI, BitMEXAPI, HuobiAPI, PythXauAPI
+from outside_api import ByBitAPI, BinanceAPI, BitMEXAPI, HuobiAPI, PythXauAPI
 
 parser = argparse.ArgumentParser(
     description='Run a market maker bot on TickSpread exchange.')
@@ -193,7 +193,7 @@ class MarketMakerSide:
         if (self.side == Side.BID):
             new_top_price = Decimal(math.floor(
                 new_price / self.tick_jump) * self.tick_jump)
-            print("BID", new_price, new_top_price)
+            #print("BID", new_price, new_top_price)
         else:
             new_top_price = Decimal(math.ceil(
                 new_price / self.tick_jump) * self.tick_jump)
@@ -639,6 +639,10 @@ class MarketMaker:
         if (not 'low' in execution_band):
             logging.warning("No low in execution_band")
             return
+            
+        
+        print(execution_band)
+        time.sleep(5.0)
         
         self.execution_band_high = Decimal(execution_band['high'])
         self.execution_band_low = Decimal(execution_band['low'])
@@ -777,9 +781,9 @@ class MarketMaker:
         if (event == "partial"):
             if (topic == "user_data"):
                 self.tickspread_user_data_partial(payload)
-                print("OK_1")                    
+                #print("OK_1")                    
                 self.cancel_old_orders()
-                print("FINISH_OK")
+                #print("FINISH_OK")
                 return 0
             
             if (topic == "market_data"):
@@ -813,18 +817,18 @@ class MarketMaker:
               or event == "delete_order" or event == "abort_create"
               or event == "active_order" or event == "reject_order"
               or event == "reject_cancel"):
-            print("receive accept: ", event)
+            #print("receive accept: ", event)
             if (not 'client_order_id' in payload):
                 self.logger.warning(
                     "No 'client_order_id' in TickSpread %s payload", event)
                 return 0
             clordid = int(payload['client_order_id'])
-            print("clordid = %d" % clordid)
+            #print("clordid = %d" % clordid)
             self.receive_exec(event, clordid)
-            print("fin accept")
+            #print("fin accept")
         elif (event == "taker_trade" or event == "maker_trade" or
               event == "liquidation" or event == "auto_deleverage"):
-            print("receive trade")
+            #print("receive trade")
             if (not 'client_order_id' in payload):
                 self.logger.warning(
                     "No 'client_order_id' in TickSpread %s payload", event)
@@ -863,6 +867,9 @@ class MarketMaker:
 
     def common_callback(self, data):
         # self.logger.info("common_callback")
+        
+        self.logger.info("callback data:", data)
+        
         new_price = None
         if ("p" in data):
             new_price = Decimal(data["p"])
@@ -874,7 +881,8 @@ class MarketMaker:
                 for trade_line in data["data"]:
                     if ("price" in trade_line):
                         new_price = Decimal(trade_line["price"])
-        #self.logger.info("new_price = %.2f" % new_price)
+        
+        self.logger.info("new_price = %.2f" % new_price)
         if (new_price != None):
             if (not self.active and
                     self.has_user_balance and
@@ -936,24 +944,28 @@ async def main():
         #                  order_size=Decimal("1.5"), max_position=Decimal("40.0"))
 
         if args.market == "XAU-TEST":
-            mmaker = MarketMaker(api, tick_jump=Decimal("0.1"), orders_per_side=10,
-                            order_size=Decimal("0.01"), max_position=Decimal("50.0"))
+            mmaker = MarketMaker(api, tick_jump=Decimal("0.01"), orders_per_side=10,
+                            order_size=Decimal("0.20"), max_position=Decimal("50.0"))
+            
+        if args.market == "XAU":
+            mmaker = MarketMaker(api, tick_jump=Decimal("0.01"), orders_per_side=50,
+                            order_size=Decimal("0.05"), max_position=Decimal("5.0"))
 
         if args.market == "ETH":
             mmaker = MarketMaker(api, tick_jump=Decimal("0.1"), orders_per_side=10,
                             order_size=Decimal("2.0"), max_position=Decimal("50.0"))
 
         if args.market == "ETH-TEST":
-            # mmaker = MarketMaker(api, tick_jump=Decimal("0.2"), orders_per_side=8,
+            # mmaker = MarketMaker(api, tick_jump=Decimal("0.2"), orders_per_side8,
             #                 order_size=Decimal("1.5"), max_position=Decimal("40.0"))
             mmaker = MarketMaker(api, tick_jump=Decimal("0.2"), orders_per_side=10,
                             order_size=Decimal("1.2"), max_position=Decimal("1.0"))
-            # mmaker = MarketMaker(api, tick_jump=Decimal("0.2"), orders_per_side=0,
+            # mmaker = MarketMaker(api, tick_jump=Decimal("0.2"), orders_per_side=10,
             #                 order_size=Decimal("0.2"), max_position=Decimal("1.0"))
 
         if args.market == "BTC-TEST" or args.market == "BTC-PERP":
-            mmaker = MarketMaker(api, tick_jump=Decimal("1.0"), orders_per_side=8,
-                            order_size=Decimal("1.5"), max_position=Decimal("4.0"))
+            mmaker = MarketMaker(api, tick_jump=Decimal("1.0"), orders_per_side=10,
+                            order_size=Decimal("0.01"), max_position=Decimal("4.0"))
 
         if args.market == "BTC" or args.market == "BTC-PERP":
             mmaker = MarketMaker(api, tick_jump=Decimal("1.0"), orders_per_side=10,
@@ -972,7 +984,6 @@ async def main():
         print("STARTING")
 
         #bybit_api = ByBitAPI()
-        ftx_api = FTXAPI()
 
         #bitmex_api = BitMEXAPI()
         #huobi_api = HuobiAPI()
@@ -981,21 +992,22 @@ async def main():
         await api.subscribe("market_data", {"symbol": args.market})
         await api.subscribe("user_data", {"symbol": args.market})
         api.on_message(mmaker.callback)
+        
+        # These variables are not referred to anywhere, but an object is being created
+        # We're passing the mmaker callbacks
+        
+        if args.external_market == 'XAU':
+            external_api = PythXauAPI()
+            external_api.subscribe_index_price(args.external_market)
+            external_api.on_message(mmaker.callback)
+        else:
+            binance_api = BinanceAPI()
+            binance_api.subscribe_futures(args.external_market)
+            binance_api.on_message(mmaker.callback)
 
     # await bybit_api.connect()
     # await bybit_api.subscribe()
     # bybit_api.on_message(mmaker.callback)
-
-    # ftx_api = FTXAPI()
-    # ftx_api.on_message(mmaker.callback)
-    # await ftx_api.connect()
-    # await ftx_api.subscribe('ticker')
-    # await ftx_api.subscribe('orderbook')
-    # await ftx_api.subscribe('trades', market=args.external_market)
-    # await ftx_api.start_loop()
-
-    # # logging.info("Done")
-    # ftx_api.on_message(mmaker.callback)
 
     # if dex == True:
     #     binance_api.subscribe_futures('ETHUSDT')
@@ -1004,15 +1016,6 @@ async def main():
     # binance_api = BinanceAPI(
     #     os.getenv('BINANCE_KEY'),
     #     os.getenv('BINANCE_SECRET'))
-
-    if args.external_market == 'XAU':
-        binance_api = PythXauAPI()
-        binance_api.subscribe_index_price(args.external_market)
-        binance_api.on_message(mmaker.callback)
-    else:
-        binance_api = BinanceAPI()
-        binance_api.subscribe_futures(args.external_market)
-        binance_api.on_message(mmaker.callback)
 
     # await bitmex_api.connect()
     # bitmex_api.on_message(mmaker.callback)

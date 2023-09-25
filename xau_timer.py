@@ -1,4 +1,5 @@
 import asyncio
+import datetime
 import argparse
 from outside_api import PythXauAPI
 from confluent_kafka import Consumer, Producer
@@ -29,15 +30,16 @@ market_open = False
 
 def open_market():
     print("open market")
+    print(datetime.datetime.now())
     producer.poll(0.0)
-    producer.produce(topic=args.topic, partition=int(args.partition), value='{"event":"market_status", "market": "' + args.market + '", "market_status": "enabled"}')
     producer.produce(topic=args.topic, partition=int(args.partition), value='{"event":"market_status", "market": "' + args.market + '", "market_status": "open"}')
     producer.flush(timeout=15.0)
 
 def close_market():
     print("close market")
+    print(datetime.datetime.now())
     producer.poll(0.0)
-    producer.produce(topic=args.topic, partition=int(args.partition), value='{"event":"market_status", "market": "' + args.market + '", "market_status": "close"}')
+    producer.produce(topic=args.topic, partition=int(args.partition), value='{"event":"market_status", "market": "' + args.market + '", "market_status": "closed"}')
     producer.flush(timeout=15.0)
 
 def open_xau_market(provider,message):
@@ -48,15 +50,17 @@ def open_xau_market(provider,message):
             if market_open == False:
                 open_market()
                 market_open = True
+            error_count = 0
+            print(message)
         else:
             error_count += 1
-            if error_count > 10:
+            if error_count > 10 and market_open == True:
                 close_market()
-                market_open = True
-
+                market_open = False
 
 
 async def main():
+    # open_market()
     api = PythXauAPI()
     api.on_message(open_xau_market);
     api.subscribe_index_price('XAU-TEST')

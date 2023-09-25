@@ -21,179 +21,6 @@ from binance import BinanceSocketManager, ThreadedWebsocketManager
 from pythclient.pythaccounts import PythPriceAccount, PythPriceStatus
 from pythclient.solana import SolanaClient, SolanaPublicKey, PYTHNET_HTTP_ENDPOINT, PYTHNET_WS_ENDPOINT
 
-class FTXAPI:
-    def __init__(self, auth=None, logger=logging.getLogger()):
-        self.endpoint = 'https://ftx.com/api/'
-        self.host = "wss://ftx.com/ws/"
-        self.logger = logger
-        self.callbacks = []
-        self.last_ping = 0
-        
-        self.topics = []
-        self.has_login = False
-        
-        self._session = Session()
-        self.auth = auth
-        if self.auth:
-            self._api_key = self.auth.get("FTX_API_KEY")
-            self._api_secret = self.auth.get("FTX_API_SECRET")
-            self._subaccount_name = self.auth.get("FTX_SUBACCOUNT")
-            
-            assert(self._api_secret)
-            assert(self._api_key)
-            assert(self._subaccount_name)
-        else:
-            # assert(False)
-            pass
-
-    def _process_response(self, response: Response) -> Any:
-        try:
-            data = response.json()
-        except ValueError:
-            response.raise_for_status()
-            raise
-        else:
-            if not data['success']:
-                print(data)
-                raise Exception(data['error'])
-            if type(data['result']) != list: 
-                data['result']['success'] = data['success']
-            return data['result']
-
-    def _get(self, path: str, params: Optional[Dict[str, Any]] = None) -> Any:
-        return self._request('GET', path, params=params)
-
-    def _post(self, path: str, params: Optional[Dict[str, Any]] = None) -> Any:
-        return self._request('POST', path, json=params)
-
-    def _delete(self, path: str, params: Optional[Dict[str, Any]] = None) -> Any:
-        return self._request('DELETE', path, json=params)
-
-    def _request(self, method: str, path: str, **kwargs) -> Any:
-        count = 0
-        while count < 5:
-            try:
-                request = Request(method, self.endpoint + path, **kwargs)
-                self._sign_request(request)
-                response = self._session.send(request.prepare())
-                return self._process_response(response)
-            except Exception as e:
-                print("FTX Client request failed, retrying ", e, method, path)
-                time.sleep(5)
-                count += 1
-        raise {'error':'Failed FTX request after 5 retries'}
-    
-    def _sign_request(self, request: Request) -> None:
-        ts = int(time.time() * 1000)
-        prepared = request.prepare()
-        signature_payload = f'{ts}{prepared.method}{prepared.path_url}'.encode()
-        if prepared.body:
-            signature_payload += prepared.body
-        signature = hmac.new(self._api_secret.encode(), signature_payload, 'sha256').hexdigest()
-        request.headers['FTX-KEY'] = self._api_key
-        request.headers['FTX-SIGN'] = signature
-        request.headers['FTX-TS'] = str(ts)
-        if self._subaccount_name:
-            request.headers['FTX-SUBACCOUNT'] = urllib.parse.quote(self._subaccount_name)
-
-
-    def place_order(self, market: str, side: str, price: float, size: float, type: str = 'limit',
-                    reduce_only: bool = False, ioc: bool = False, post_only: bool = False,
-                    client_id: str = None, reject_after_ts: float = None) -> dict:
-        return self._post('orders', {
-            'market': market,
-            'side': side,
-            'price': price,
-            'size': size,
-            'type': type,
-            'reduceOnly': reduce_only,
-            'ioc': ioc,
-            'postOnly': post_only,
-            'clientId': client_id,
-            'rejectAfterTs': reject_after_ts
-        })
-
-    def get_positions(self, show_avg_price: bool = False) -> List[dict]:
-        return self._get('positions', {'showAvgPrice': show_avg_price})
-
-    async def connect(self):
-        self.websocket = await websockets.connect(self.host, ping_interval=None)
-    
-    async def login(self):
-        assert(self._api_secret)
-        assert(self._api_key)
-        assert(self._subaccount_name)
-        self.has_login = True
-        
-        ts = int(time.time() * 1000)
-        login_msg = {'op': 'login', 'args': {
-            'key': self._api_key,
-            'sign': hmac.new(
-                self._api_secret.encode(), f'{ts}websocket_login'.encode(), 'sha256').hexdigest(),
-            'time': ts,
-            'subaccount': self._subaccount_name,
-        }}
-        await self.websocket.send(json.dumps(login_msg))
-
-    async def subscribe(self, topic, market):
-        self.topics.append((topic, market))
-        data = {'op': 'subscribe', 'channel': topic, 'market': market}
-        await self.websocket.send(json.dumps(data))
-        
-
-    def on_message(self, callback):
-        self.callbacks.append(callback)
-        
-    async def start_loop(self):
-        asyncio.get_event_loop().create_task(self.loop())
-
-    async def reconnect(self):
-        try:
-            time.sleep(1)
-            print("FTX reconnect")
-            
-            print("Try connect")
-            await self.connect()
-            print("Try Login")
-            if (self.has_login):
-                await self.login()
-            print("Try Subscribe, self.topics = ", self.topics)
-            topics = self.topics
-            self.topics = []
-            for topic, market in topics:
-                print("Try sub: ", topic, flush=True)
-                await self.subscribe(topic, market)
-                time.sleep(1)
-                print("end 1")
-            print("end 2")
-            return True
-        except Exception as e:
-            print("Reconnect Exception: ", e)
-            # or
-            print(sys.exc_info())
-            return False
-
-    async def loop(self):
-        while True:
-            try:
-                print("Wait")
-                message = await asyncio.wait_for(self.websocket.recv(), timeout=10)
-
-                print("Received")
-                #message = json.loads(message)
-                for callback in self.callbacks:
-                    callback("ftx", message)
-            except Exception as e:
-                print("FTX Loop Exception: ", e)
-                attempts = 0
-                await self.websocket.close()
-                while await self.reconnect() != True:
-                    attempts += 1
-                    print("Reconnection Failed Attempt Number ", attempts)
-                await self.start_loop()
-                break
-            #message = await asyncio.wait_for(websocket.recv(), 5)
-
 
 class BitMEXAPI:
     def __init__(self, logger=logging.getLogger()):
@@ -423,9 +250,8 @@ def test_callback(source, raw_data):
 
 
 async def main():
+    pass
     # bybit_api = ByBitAPI()
-    # ftx_api = FTXAPI()
-    ftx_api = PythXauAPI()
     # binance_api = BinanceAPI()
     # bitmex_api = BitMEXAPI()
     # huobi_api = HuobiAPI()
@@ -439,18 +265,6 @@ async def main():
     # binance_api.subscribe_futures('ETHUSDT')
     # binance_api.on_message(test_callback)
     # binance_api.stop()
-    #print("pre ftx_api.connect()")
-    #await ftx_api.connect()
-    ftx_api.on_message(open_xau_market);
-    ftx_api.subscribe_index_price('XAU-TEST')
-    # await ftx_api.subscribe('orderbook')
-    #print("pre await ftx_api.subscribe('trades')")
-    #await ftx_api.subscribe('trades', 'ETH-PERP')
-    #print("pre ftx_api.on_message(test_callback)")
-    #ftx_api.on_message(test_callback)
-    #print("pre ftx_api.start_loop()")
-    #await ftx_api.start_loop()
-    #print("post ftx_api.start_loop()")
 
     # await bitmex_api.connect()
     # bitmex_api.on_message(test_callback)

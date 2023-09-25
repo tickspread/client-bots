@@ -14,34 +14,84 @@ key = 'transfer_balance'
 
 
 messages = [
+        {
+        "event": "transfer_balance",
+        "user_group_id": 0,
+        "user_id_from": 0,
+        "user_id_to": 4,
+        "asset": "testUSD",
+        "asset_id": 8,
+        "balance_amount": 10000000000,
+        "asset_precision": 6
+    },
     #     {
     #     "event": "transfer_balance",
     #     "user_group_id": 0,
-    #     "user_id_from": 65285,
-    #     "user_id_to": 3,
+    #     "user_id_from": 0,
+    #     "user_id_to": 11,
     #     "asset": "testUSD",
     #     "asset_id": 8,
-    #     "balance_amount": 4000000000,
+    #     "balance_amount": 10000000000,
     #     "asset_precision": 6
     # },
     #     {
     #     "event": "transfer_balance",
     #     "user_group_id": 0,
-    #     "user_id_from": 65285,
-    #     "user_id_to": 2,
+    #     "user_id_from": 0,
+    #     "user_id_to": 4,
     #     "asset": "testUSD",
     #     "asset_id": 8,
-    #     "balance_amount": 2000000000,
+    #     "balance_amount": 10000000000,
     #     "asset_precision": 6
     # },
+    #     {
+    #     "event": "transfer_balance",
+    #     "user_group_id": 0,
+    #     "user_id_from": 0,
+    #     "user_id_to": 7,
+    #     "asset": "testUSD",
+    #     "asset_id": 8,
+    #     "balance_amount": 10000000000,
+    #     "asset_precision": 6
+    # },
+        {
+        "event": "transfer_balance",
+        "user_group_id": 0,
+        "user_id_from": 0,
+        "user_id_to": 5,
+        "asset": "testUSD",
+        "asset_id": 8,
+        "balance_amount": 10000000000,
+        "asset_precision": 6
+    },
+#         {
+#         "event": "transfer_balance",
+#         "user_group_id": 0,
+#         "user_id_from": 0,
+#         "user_id_to": 1,
+#         "asset": "testUSD",
+#         "asset_id": 8,
+#         "balance_amount": 10000000000,
+#         "asset_precision": 6
+#     },
+#         {
+#         "event": "transfer_balance",
+#         "user_group_id": 0,
+#         "user_id_from": 0,
+#         "user_id_to": 2,
+#         "asset": "testUSD",
+#         "asset_id": 8,
+#         "balance_amount": 10000000000,
+#         "asset_precision": 6
+#     },
 #     {
 #     "event": "transfer_balance",
 #     "user_group_id": 0,
-#     "user_id_from": 3,
-#     "user_id_to": 6,
+#     "user_id_from": 0,
+#     "user_id_to": 3,
 #     "asset": "testUSD",
 #     "asset_id": 8,
-#     "balance_amount": 150000000,
+#     "balance_amount": 10000000000,
 #     "asset_precision": 6
 #    },
 #     {
