@@ -9,6 +9,9 @@ parser = argparse.ArgumentParser(description='Change the market status')
 parser.add_argument('--host', dest='host', default="localhost",
                     help='set the host that will consume from (default: localhost)')
 
+parser.add_argument('--port', dest='port', default="9092",
+                    help='set the port that will consume from (default: 9092)')
+
 parser.add_argument('--partition', dest='partition', default=3,
                     help='set the partition that will consume from (default: 0)')
 
@@ -21,7 +24,7 @@ parser.add_argument('--topic', dest='topic', help='The orders topic', default='o
 
 args = parser.parse_args()
 
-producer_config = {'bootstrap.servers': args.host + ":9092"}
+producer_config = {'bootstrap.servers': args.host + ":" + args.port}
 producer = Producer(producer_config)
 
 
@@ -61,6 +64,7 @@ def open_xau_market(provider,message):
 
 async def main():
     # open_market()
+    close_market()
     api = PythXauAPI()
     api.on_message(open_xau_market);
     api.subscribe_index_price('XAU-TEST')

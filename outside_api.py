@@ -201,6 +201,12 @@ class PythXauAPI:
         self.callbacks = []
         self.event_loop = asyncio.get_event_loop()
         self.queue = asyncio.Queue()
+        self.account_key = SolanaPublicKey("8y3WWjvmSmVGWVKH1rCA7VTRmuU7QbJ9axafSsBX5FcD")
+        self.solana_client = SolanaClient(endpoint=PYTHNET_HTTP_ENDPOINT, ws_endpoint=PYTHNET_WS_ENDPOINT)
+        self.price: PythPriceAccount = PythPriceAccount(self.account_key, self.solana_client)
+
+    def __del__(self):
+        self.queue.put_nowait(self.solana_client.close())
 
     def subscribe_index_price(self, symbol):
         self.event_loop.create_task(self.loop(symbol))
@@ -210,28 +216,26 @@ class PythXauAPI:
 
     async def get_gold_price(self):
         # pythnet GOLD/USD price account key (available on pyth.network website)
-        account_key = SolanaPublicKey("8y3WWjvmSmVGWVKH1rCA7VTRmuU7QbJ9axafSsBX5FcD")
-        solana_client = SolanaClient(endpoint=PYTHNET_HTTP_ENDPOINT, ws_endpoint=PYTHNET_WS_ENDPOINT)
-        price: PythPriceAccount = PythPriceAccount(account_key, solana_client)
 
-        await price.update()
+        await self.price.update()
         data =  { "status": "fail" }
 
-        price_status = price.aggregate_price_status
+        price_status = self.price.aggregate_price_status
         if price_status == PythPriceStatus.TRADING:
             # Sample output: "DOGE/USD is 0.141455 ± 7.4e-05"
             #print("GOLD/USD is", price.aggregate_price, "±", price.aggregate_price_confidence_interval)
-            data =  { "status": "ok", "p": price.aggregate_price, "confidence":price.aggregate_price_confidence_interval }
+            data =  { "status": "ok", "p": self.price.aggregate_price, "confidence":self.price.aggregate_price_confidence_interval }
         else:
             print("Price is not valid now. Status is", price_status)
 
-        await solana_client.close()
         return data
 
     async def loop(self, symbol):
         while True:
+            await asyncio.sleep(5)
             try:
                 while True:
+                    await asyncio.sleep(10)
                     data = await self.get_gold_price()
 
                     for callback in self.callbacks:

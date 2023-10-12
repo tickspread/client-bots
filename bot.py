@@ -949,7 +949,7 @@ async def main():
             
         if args.market == "XAU":
             mmaker = MarketMaker(api, tick_jump=Decimal("0.01"), orders_per_side=50,
-                            order_size=Decimal("0.05"), max_position=Decimal("5.0"))
+                            order_size=Decimal("0.15"), max_position=Decimal("20.0"))
 
         if args.market == "ETH":
             mmaker = MarketMaker(api, tick_jump=Decimal("0.1"), orders_per_side=10,
