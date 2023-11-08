@@ -243,9 +243,9 @@ class PythXauAPI:
             except Exception as e:
                 if self.logger:
                     self.logger.warning("retry Pyth")
-                print("retry Pyth")
+                print("retry Pyth", data)
                 print(e)
-                self.subscribe_index_price(symbol)
+                #self.subscribe_index_price(symbol)
 
 def test_callback(source, raw_data):
     timestamp = time.time()
