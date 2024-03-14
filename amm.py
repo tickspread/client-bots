@@ -896,7 +896,7 @@ async def main():
     # mmaker = MarketMaker(api, tick_jump=Decimal("0.2"), orders_per_side=10,
     #                  order_size=Decimal("1.5"), max_position=Decimal("40.0"))
     
-    mmaker = MarketMaker(api, tick_jump=args.tick_jump, orders_per_side=20,
+    mmaker = MarketMaker(api, tick_jump=msp'args.tick_jump, orders_per_side=20,
                         order_size=args.liquidity, max_position=args.max_position)
     
     print("REGISTER")
