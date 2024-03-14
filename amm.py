@@ -54,7 +54,6 @@ args = parser.parse_args()
 id = args.id
 env = args.env
 log_file = args.log
-dex = True if args.dex == "true" else False
 tickspread_password = args.tickspread_password
 
 logging.basicConfig(level=logging.INFO,
@@ -154,9 +153,9 @@ class MarketMakerSide:
         self.side = side
         self.target_num_orders = target_num_orders
         self.max_orders = max_orders
-        self.order_size = order_size
-        self.available_limit = available_limit
-        self.tick_jump = tick_jump
+        self.order_size = Decimal(order_size)
+        self.available_limit= Decimal(available_limit)
+        self.tick_jump = Decimal(tick_jump)
 
         self.last_status_time = 0.0
 
@@ -325,17 +324,12 @@ class MarketMaker:
         self.old_orders = []
 
         self.has_user_position = False
-        self.position = 0
+        self.position = Decimal(0)
         self.position_entry_price = 0
         self.position_liquidation_price = 0
         self.position_total_margin = 0
         self.position_funding = 0
         
-        if dex == True:
-            self.has_user_balance = True
-            self.has_old_orders = True
-            self.has_user_position = True
-
         # PnL
         self.gross_profit = 0
         self.fees_paid = 0
@@ -346,7 +340,7 @@ class MarketMaker:
         self.leverage = leverage
         self.symbol = args.market
         self.money = args.money_asset
-        self.max_position = max_position
+        self.max_position = Decimal(max_position)
 
         # State
         self.real = True
@@ -896,7 +890,7 @@ async def main():
     # mmaker = MarketMaker(api, tick_jump=Decimal("0.2"), orders_per_side=10,
     #                  order_size=Decimal("1.5"), max_position=Decimal("40.0"))
     
-    mmaker = MarketMaker(api, tick_jump=msp'args.tick_jump, orders_per_side=20,
+    mmaker = MarketMaker(api, tick_jump=args.tick_jump, orders_per_side=20,
                         order_size=args.liquidity, max_position=args.max_position)
     
     print("REGISTER")
