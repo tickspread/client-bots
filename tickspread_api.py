@@ -103,6 +103,7 @@ class TickSpreadAPI:
         try:
             text_json = json.loads(r.text)
             client_order_id = text_json["client_order_id"]
+            print(text_json)
         except Exception as e:
             print(r.text)
             print(e, flush=True)
@@ -182,7 +183,7 @@ class TickSpreadAPI:
             self.logger.info(batch)
             r = requests.post(url, headers={"authorization": (
                 "Bearer %s" % self.token)}, json=batch, timeout=5.0)
-            print(f'{str(time.process_time())} <- ')
+            #print(f'{str(time.process_time())} <- ')
         except Exception as e:
             print(e, flush=True)
             self.logger.error(e)

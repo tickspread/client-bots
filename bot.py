@@ -1,3 +1,4 @@
+
 # -*- coding: utf-8 -*-
 """Example TickSpread Bot
 
@@ -66,7 +67,7 @@ log_file = args.log
 dex = True if args.dex == "true" else False
 tickspread_password = args.tickspread_password
 
-logging.basicConfig(level=logging.INFO,
+logging.basicConfig(level=logging.WARN,
                     format='%(asctime)s %(levelname)-8s %(message)s')
 if log_file != "shell":
     # log_handler = logging.handlers.WatchedFileHandler(
@@ -729,10 +730,11 @@ class MarketMaker:
                 self.position_funding = funding
                 found_symbol_position = True
 
+
         if (not found_symbol_position):
             logging.warning(
                 "Could not find %s position in partial" % self.symbol)
-            return
+            self.position = 0
         self.has_user_position = True
         print("Read user_data partial successfully")
 
@@ -892,6 +894,8 @@ class MarketMaker:
                 self.active = True
                 self.logger.info("Activating: %d (%d/%d)", self.position,
                                  self.bids.available_limit, self.asks.available_limit)
+            elif not self.active:
+                print(self.has_user_balance, self.has_old_orders, self.has_user_position, self.has_execution_band)
 
             #self.logger.info("active = %s" % str(self.active))
             if (self.active):
@@ -955,13 +959,21 @@ async def main():
             mmaker = MarketMaker(api, tick_jump=Decimal("0.1"), orders_per_side=10,
                             order_size=Decimal("2.0"), max_position=Decimal("50.0"))
 
+        if args.market == "SOL":
+            mmaker = MarketMaker(api, tick_jump=Decimal("0.01"), orders_per_side=10,
+                            order_size=Decimal("20.0"), max_position=Decimal("500.0"))
+
         if args.market == "ETH-TEST":
             # mmaker = MarketMaker(api, tick_jump=Decimal("0.2"), orders_per_side8,
             #                 order_size=Decimal("1.5"), max_position=Decimal("40.0"))
             mmaker = MarketMaker(api, tick_jump=Decimal("0.2"), orders_per_side=10,
-                            order_size=Decimal("1.2"), max_position=Decimal("1.0"))
+                            order_size=Decimal("0.001"), max_position=Decimal("1.0"))
             # mmaker = MarketMaker(api, tick_jump=Decimal("0.2"), orders_per_side=10,
             #                 order_size=Decimal("0.2"), max_position=Decimal("1.0"))
+        
+        if args.market == "SOL-TEST":
+            mmaker = MarketMaker(api, tick_jump=Decimal("0.01"), orders_per_side=0,
+                            order_size=Decimal("0.020"), max_position=Decimal("20.0"))
 
         if args.market == "BTC-TEST" or args.market == "BTC-PERP":
             mmaker = MarketMaker(api, tick_jump=Decimal("1.0"), orders_per_side=10,
