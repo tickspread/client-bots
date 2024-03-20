@@ -26,7 +26,12 @@ import os
 import argparse
 import logging.handlers
 
-from decimal import Decimal
+import scipy
+
+from scipy.optimize import bisect
+
+
+from decimal import Decimal, ROUND_DOWN
 from tickspread_api import TickSpreadAPI
 # from python_loopring.tickspread_dex import TickSpreadDex
 from outside_api import ByBitAPI, BinanceAPI, BitMEXAPI, HuobiAPI, PythXauAPI
@@ -48,6 +53,8 @@ parser.add_argument('--liquidity', dest='liquidity', required=True)
 parser.add_argument('--neutral_price', dest='neutral_price', required=True)
 parser.add_argument('--max_position', dest='max_position', required=True)
 parser.add_argument('--tick_jump', dest='tick_jump', required=True)
+parser.add_argument('--max_price', dest='max_price', required=True)
+parser.add_argument('--minimum_size', dest='minimum_size', required=True)
 
 
 args = parser.parse_args()
@@ -122,6 +129,19 @@ def order_cancel_to_str(cancel):
 
 MAX_CANCEL_RETRIES = 50
 
+def f(p):
+    assert 0 < p < 1, "p must be between 0 and 1"
+    return math.log(p) - math.log(1.0 - p)
+
+def inverse_f(y):
+    min_p = 0.00000001
+    max_p = 0.99999999
+    if f(min_p) >= y:
+        return 0
+    if f(max_p) <= y:
+        return 1
+    return bisect(lambda p: f(p)-y, min_p, max_p)
+
 class Order:
     def __init__(self, side, logger):
         self.clordid = None
@@ -153,18 +173,39 @@ class MarketMakerSide:
         self.side = side
         self.target_num_orders = target_num_orders
         self.max_orders = max_orders
-        self.order_size = Decimal(order_size)
         self.available_limit= Decimal(available_limit)
         self.tick_jump = Decimal(tick_jump)
 
         self.last_status_time = 0.0
+        self.max_order_size = Decimal(order_size)
 
         self.top_order = 0
         self.top_price = None
         self.orders = []
         for i in range(self.max_orders):
             self.orders.append(Order(self.side, self.parent.logger))
+    
+    def order_size(self, price):
+        #return self.order_size;	 // Only for linear AMM
+        if (price <= self.tick_jump): return 0
+        elif (price >= self.parent.max_price - self.tick_jump): return 0
+        
+        if self.side == Side.BID:
+            p_0 = float(price)/float(self.parent.max_price)
+            p_1 = float(price + self.tick_jump)/float(self.parent.max_price)
+        else:
+            p_0 = float(price - self.tick_jump)/float(self.parent.max_price)
+            p_1 = float(price)/float(self.parent.max_price)
 
+        size = (f(p_1)-f(p_0)) * float(self.parent.liquidity)
+        size = Decimal(size).quantize(self.parent.minimum_size, rounding=ROUND_DOWN)
+        
+        if (size > self.max_order_size):
+            size = self.max_order_size
+
+        print("Order size: ", str(size))
+        return size
+    
     def debug_orders(self):
         for i in range(self.max_orders):
             index = (self.top_order + i) % (self.max_orders)
@@ -222,11 +263,9 @@ class MarketMakerSide:
         price = initial_price
 
         for i in range(self.target_num_orders):
-            '''
             self.parent.logger.info("index = %d (%d)",
                                     self.top_order + i,
                                     (self.top_order + i) % self.max_orders)
-            '''
             if (self.top_order + i >=
                     self.old_top_order + self.target_num_orders):
                 #self.parent.logger.info("breaking at %d", self.top_order + i)
@@ -234,8 +273,10 @@ class MarketMakerSide:
                 break
             index = (self.top_order + i) % (self.max_orders)
             order = self.orders[index]
+
             if (order.state == OrderState.EMPTY):
-                size = min(self.order_size, self.available_limit)
+                order_size = self.order_size(price)
+                size = min(order_size, self.available_limit)
                 self.parent.logger.info(
                     "Found empty order %d, will send NEW with size %d", index, size)
                 if (size > 0):
@@ -265,7 +306,8 @@ class MarketMakerSide:
                 order = self.orders[index]
 
                 if (order.state == OrderState.EMPTY):
-                    size = min(self.order_size, self.available_limit)
+                    order_size = self.order_size(price)
+                    size = min(order_size, self.available_limit)
                     if (size > 0):
                         self.parent.send_new(order, size, price)
 
@@ -293,7 +335,8 @@ class MarketMakerSide:
 class MarketMaker:
     def __init__(self, api, *, logger=logging.getLogger(),
                  name="bot_example", version="0.0",
-                 orders_per_side=8, max_position=400, tick_jump=10, order_size=0.5, leverage=10):
+                 orders_per_side=8, max_position=400, tick_jump=10, order_size=0.5, leverage=10,
+                 max_price=100000, minimum_size=0.001, liquidity=100.0):
         # System
         self.api = api
         self.logger = logger
@@ -335,19 +378,23 @@ class MarketMaker:
         self.fees_paid = 0
 
         # Parameters
-        self.tick_jump = tick_jump
-        self.order_size = order_size
+        self.tick_jump = Decimal(tick_jump)
+        self.order_size = Decimal(order_size)
+        self.max_price = Decimal(max_price)
         self.leverage = leverage
         self.symbol = args.market
         self.money = args.money_asset
         self.max_position = Decimal(max_position)
+        self.neutral_price = Decimal(args.neutral_price)
+        self.minimum_size = Decimal(minimum_size)
+        self.liquidity = Decimal(liquidity)
 
         # State
         self.real = True
         self.active = False
         self.fair_price = None
         self.spread = None
-
+        
     def log_new(self, side, amount, price, clordid):
         self.logger.info("->NEW %s %s @ %s (%d)" %
                          (side_to_str(side), amount, price, clordid))
@@ -381,13 +428,9 @@ class MarketMaker:
     def send_cancel(self, order):
         self.log_cancel(order.side, order.amount_left,
                         order.price, order.clordid)
-
         if (self.real):
             self.register_cancel(order)
             self.api.delete_order(order.clordid, symbol=self.symbol, asynchronous=True, batch=True)
-        
-        if dex:
-            self._delete_order(order)
 
     def register_new(self, order, clordid, amount, price):
         assert (order.state == OrderState.EMPTY)
@@ -587,8 +630,8 @@ class MarketMaker:
     def update_orders(self):
         self.logger.info("update_orders")
         assert (self.active)
-        self.bids.set_new_price(min(self.fair_price - self.spread, self.execution_band_high))
-        self.asks.set_new_price(max(self.fair_price + self.spread, self.execution_band_low))
+        self.bids.set_new_price(min(self.fair_price * (Decimal(1.0) - self.spread), self.execution_band_high))
+        self.asks.set_new_price(max(self.fair_price * (Decimal(1.0) + self.spread), self.execution_band_low))
 
         # When price falls, cancel top bids. When price rises, cancel top asks.
         self.bids.maybe_cancel_top_orders()
@@ -605,6 +648,7 @@ class MarketMaker:
         # When price falls, cancel bottom asks to maintain the desired number of orders. When price rises, cancel bottom bids.
         self.bids.maybe_cancel_bottom_orders()
         self.asks.maybe_cancel_bottom_orders()
+        self.api.dispatch_batch()
 
     def set_new_price(self, new_price):
         if (new_price != None):
@@ -625,8 +669,13 @@ class MarketMaker:
                 self.update_orders()
     
     def calculate_amm_price(self):
-        price = args.neutral_price - self.position * self.tick_jump / self.order_size
-        return price
+        y_delta = -float(self.position) / float(self.liquidity)
+        p_0 = float(self.neutral_price) / float(self.max_price)        
+        y_0 = f(p_0)
+        p = inverse_f(y_0 + y_delta)
+        print("calculate_amm_price", y_delta, p_0, y_0, p)
+                
+        return Decimal(p * float(self.max_price))
     
     def tickspread_market_data_partial(self, payload):
         print("MARKET DATA PARTIAL: ", payload)
@@ -738,6 +787,8 @@ class MarketMaker:
             return
         self.has_user_position = True
         print("Read user_data partial successfully")
+        
+        #input("Press key to continue")
 
         new_price = self.calculate_amm_price()
         self.set_new_price(new_price)
@@ -811,6 +862,8 @@ class MarketMaker:
             
             if ('execution_band' in payload):
                 execution_band = payload['execution_band']
+                print("New execution bands: " + str(execution_band))
+                
                 if (not 'high' in execution_band):
                     self.logger.warning("No high in execution_band")
                     return 0
@@ -819,6 +872,7 @@ class MarketMaker:
                     return 0
                 self.execution_band_high = Decimal(execution_band['high'])
                 self.execution_band_low = Decimal(execution_band['low'])
+                self.update_orders()
         elif (event == "acknowledge_order" or event == "maker_order"
               or event == "delete_order" or event == "abort_create"
               or event == "active_order" or event == "reject_order"
@@ -831,6 +885,7 @@ class MarketMaker:
             clordid = int(payload['client_order_id'])
             #print("clordid = %d" % clordid)
             self.receive_exec(event, clordid)
+            self.update_orders()
             #print("fin accept")
         elif (event == "taker_trade" or event == "maker_trade" or
               event == "liquidation" or event == "auto_deleverage"):
@@ -854,6 +909,7 @@ class MarketMaker:
             #print("clordid = %d, execution_amount = %d" % (clordid, execution_amount))
             self.receive_exec_trade(
                 event, clordid, execution_amount, payload['side'])
+            self.update_orders()
         elif (event == "trade"):
             pass
         elif (event == "balance"):
@@ -891,7 +947,8 @@ async def main():
     #                  order_size=Decimal("1.5"), max_position=Decimal("40.0"))
     
     mmaker = MarketMaker(api, tick_jump=args.tick_jump, orders_per_side=20,
-                        order_size=args.liquidity, max_position=args.max_position)
+                        order_size=10.0, max_position=args.max_position,
+                        max_price=args.max_price, minimum_size=args.minimum_size, liquidity=args.liquidity)
     
     print("REGISTER")
     api.register('maker%s@tickspread.com' % id, tickspread_password)

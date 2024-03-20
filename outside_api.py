@@ -138,10 +138,10 @@ class BinanceAPI:
         async with self.bm.trade_socket(symbol) as ts:
             while True:
                 try:
-                    print("wait bin")
+                    #print("wait bin")
                     # self.logger.info("wait bin")
                     data = await asyncio.wait_for(ts.recv(), 10)
-                    print("recieved bin")
+                    #print("recieved bin")
                     # self.logger.info("recieved bin")
                     
                     if data != None:
