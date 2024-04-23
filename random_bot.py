@@ -44,6 +44,10 @@ from tickspread_api import TickSpreadAPI
 # from python_loopring.tickspread_dex import TickSpreadDex
 from outside_api import ByBitAPI, BinanceAPI, BitMEXAPI, HuobiAPI, PythXauAPI
 
+import statistics
+from datetime import datetime
+from pyblake2 import blake2b
+
 parser = argparse.ArgumentParser(
     description='Run a market maker bot on TickSpread exchange.')
 parser.add_argument('--id', dest='id', default="0",
@@ -67,7 +71,7 @@ log_file = args.log
 dex = True if args.dex == "true" else False
 tickspread_password = args.tickspread_password
 
-logging.basicConfig(level=logging.INFO,
+logging.basicConfig(level=logging.WARN,
                     format='%(asctime)s %(levelname)-8s %(message)s')
 if log_file != "shell":
     # log_handler = logging.handlers.WatchedFileHandler(
@@ -194,11 +198,10 @@ class MarketMakerSide:
         if (self.side == Side.BID):
             new_top_price = Decimal(math.floor(
                 new_price / self.tick_jump) * self.tick_jump)
-            print("BID", new_price, new_top_price)
+            #print("BID", new_price, new_top_price)
         else:
             new_top_price = Decimal(math.ceil(
                 new_price / self.tick_jump) * self.tick_jump)
-            print("ASK", new_price, new_top_price)
         self.old_top_price = self.top_price
         self.top_price = new_top_price
         self.old_top_order = self.top_order
@@ -312,7 +315,8 @@ class MarketMakerSide:
 class MarketMaker:
     def __init__(self, api, *, logger=logging.getLogger(),
                  name="bot_example", version="0.0",
-                 orders_per_side=8, max_position=400, tick_jump=10, order_size=0.5, leverage=10):
+                 orders_per_side=8, max_position=400, tick_jump=10, order_size=0.5, leverage=10,
+                 initial_price=1000.0, volatility=0.001):
         # System
         self.api = api
         self.logger = logger
@@ -371,6 +375,23 @@ class MarketMaker:
         self.active = False
         self.fair_price = None
         self.spread = None
+        
+        # Random markets
+        # Market configuration
+        self.initial_price = Decimal(initial_price)
+        self.volatility = Decimal(volatility)
+        self.seed = None
+
+        # Current state variables
+        self.current_base_price = Decimal(initial_price)
+        self.current_tick_counter = 0
+
+        # Next state variable
+        self.next_base_price = Decimal(initial_price)
+        self.next_tick_counter = 0
+        
+        # Set the file name based on the current date
+        self.state_filename = f"market_maker_state_{datetime.utcnow().strftime('%Y_%m_%d')}.json"
 
     def log_new(self, side, amount, price, clordid):
         self.logger.info("->NEW %s %s @ %s (%d)" %
@@ -450,6 +471,9 @@ class MarketMaker:
         order.state = OrderState.ACKED
         self.logger.info("Sent: %d, Received: %d",
                          order.auction_id_send, self.last_auction_id)
+        
+        # Save state only after order is acknowledged
+        self.save_state()
 
     def exec_reject(self, order):
         if (order.state != OrderState.PENDING):
@@ -738,7 +762,6 @@ class MarketMaker:
             self.position = 0
         self.has_user_position = True
         print("Read user_data partial successfully")
-        input("Press key to continue")
 
     def cancel_old_orders(self):
         print("Old orders:")
@@ -788,7 +811,6 @@ class MarketMaker:
                 #print("OK_1")                    
                 self.cancel_old_orders()
                 #print("FINISH_OK")
-                input("Press key to continue (again)")
                 return 0
             
             if (topic == "market_data"):
@@ -869,122 +891,170 @@ class MarketMaker:
             print("UNKNOWN EVENT: %s" % event)
             print(data)
         return 0
+    
+    def validate_orders(self):
+        if not self.active:
+            self.logger.error("Market maker is not active, cannot validate orders.")
+            raise ValueError("Market maker is not active, cannot validate orders.")
+
+        # Exclude empty orders from validation
+        non_empty_orders = [order for order in self.bids.orders + self.asks.orders if order.state != OrderState.EMPTY]
+        non_maker_orders = [order for order in non_empty_orders if order.state != OrderState.MAKER]
+        if non_maker_orders:
+            raise ValueError("There are orders not in MAKER state, validation failed.")
+                
+        pending_cancels = [order for order in non_empty_orders if order.cancel == CancelState.PENDING]
+        if pending_cancels:
+            raise ValueError("There are pending cancellations, cannot proceed.")
+
+        maker_bids = [order for order in self.bids.orders if order.state == OrderState.MAKER]
+        maker_asks = [order for order in self.asks.orders if order.state == OrderState.MAKER]
+        if len(maker_bids) != self.orders_per_side or len(maker_asks) != self.orders_per_side:
+            raise ValueError("Incorrect number of maker orders on either side.")
+
+        # Check proximity to fair price within tick_jump
+        for order in maker_bids:
+            if not (self.fair_price - self.tick_jump <= order.price <= self.fair_price):
+                raise ValueError("Bid order price is not within the expected range from the fair price.")
+
+        for order in maker_asks:
+            if not (self.fair_price <= order.price <= self.fair_price + self.tick_jump):
+                raise ValueError("Ask order price is not within the expected range from the fair price.")
+
+        print("All validations passed, ready for price generation.")
+        
+    def save_state(self):
+        try:
+            state = {
+                'seed': self.seed,
+                'volatility': str(self.volatility),
+                'tick_counter': self.current_tick_counter,
+                'last_price': str(self.current_base_price),
+                'base_price': str(self.initial_price)
+            }
+            with open(self.state_filename, 'w') as f:
+                json.dump(state, f)
+            # Since it was saved, update current states
+            self.current_tick_counter = self.next_tick_counter
+            self.current_base_price = self.next_base_price
+            print("State saved successfully.")
+        except Exception as e:
+            self.logger.error(f"Failed to save state: {e}")
+            raise Exception(f"Failed to save state: {e}") 
+    
+    def generate_price(self):
+        if self.seed is None:
+            self.seed = blake2b(datetime.utcnow().strftime('%Y%m%d').encode(), digest_size=32).hexdigest()
+
+        tick = self.current_tick_counter + 1
+        combined_value = bytes(self.seed + str(tick), 'ascii')
+        hash_value = blake2b(combined_value, digest_size=32).digest()
+        unsigned_int = int.from_bytes(hash_value[:8], 'little')
+        unit_range = float(unsigned_int) / (2**64 - 1)
+        normal_return = statistics.NormalDist(mu=0.0, sigma=float(self.volatility)).inv_cdf(unit_range)
+
+        new_price = self.current_base_price * (1 + Decimal(normal_return))
+        self.next_base_price = new_price  # Update the base price for the next generation
+        self.next_tick_counter = tick    
+
+        return {"p": new_price}
+
+    def load_state(self):
+        try:
+            if os.path.exists(self.state_filename):
+                with open(self.state_filename, 'r') as file:
+                    state = json.load(file)
+                    seed = state['seed']
+                    volatility = Decimal(state['volatility'])
+                    current_tick_counter = int(state['tick_counter'])
+                    initial_price = Decimal(state['initial_price'])
+                    current_base_price = Decimal(state['last_price'])
+
+                # Replay from initial price to verify current base price
+                price = initial_price
+                for tick in range(current_tick_counter):
+                    combined_value = bytes(seed + str(tick), 'ascii')
+                    hash_value = blake2b(combined_value, digest_size=32).digest()
+                    unsigned_int = int.from_bytes(hash_value[:8], 'little')
+                    unit_range = float(unsigned_int) / (2**64 - 1)
+                    normal_return = statistics.NormalDist(mu=0.0, sigma=float(self.volatility)).inv_cdf(unit_range)
+                    price *= (1 + Decimal(normal_return))
+
+                if price != current_base_price:
+                    raise ValueError("Replay failed: recalculated price does not match the saved current base price")
+
+                # Prepare next state parameters based on current state
+                self.seed = seed
+                self.volatility = volatility
+                self.initial_price = initial_price
+                self.current_tick_counter = current_tick_counter
+                self.current_base_price = current_base_price
+                
+                print("State loaded and replay verified successfully.")
+            else:
+                self.seed = hashlib.blake2b(datetime.utcnow().strftime('%Y%m%d').encode(), digest_size=32).hexdigest()
+                self.current_tick_counter = 0
+                self.current_base_price = Decimal(self.initial_price)
+                self.initial_price = Decimal(self.initial_price)
+                self.volatility = Decimal(self.volatility)
+            
+        except Exception as e:
+            self.logger.error("Failed to load or verify state through replay: %s", e)
+            raise ValueError("Failed to load or verify state through replay") from e
 
     def common_callback(self, data):
-        # self.logger.info("common_callback")
-        
-        self.logger.info("callback data:", data)
-        
-        new_price = None
-        if ("p" in data):
-            new_price = Decimal(data["p"])
+        try:
+            # self.logger.info("common_callback")
+            
+            self.logger.info("callback data:", data)
+            
+            new_price = None
+            if ("p" in data):
+                new_price = Decimal(data["p"])
 
-        if ("data" in data):
-            if ("p" in data["data"]):
-                new_price = Decimal(data["data"]["p"])
-            else:
-                for trade_line in data["data"]:
-                    if ("price" in trade_line):
-                        new_price = Decimal(trade_line["price"])
-        
-        self.logger.info("new_price = %.2f" % new_price)
-        if (new_price != None):
-            if (not self.active and
-                    self.has_user_balance and
-                    self.has_old_orders and
-                    self.has_user_position and
-                    self.has_execution_band):
-                self.active = True
-                self.logger.info("Activating: %d (%d/%d)", self.position,
-                                 self.bids.available_limit, self.asks.available_limit)
-            elif not self.active:
-                print(self.has_user_balance, self.has_old_orders, self.has_user_position, self.has_execution_band)
+            if ("data" in data):
+                if ("p" in data["data"]):
+                    new_price = Decimal(data["data"]["p"])
+                else:
+                    for trade_line in data["data"]:
+                        if ("price" in trade_line):
+                            new_price = Decimal(trade_line["price"])
+            
+            self.logger.info("new_price = %.2f" % new_price)
+            if (new_price != None):
+                if (not self.active and
+                        self.has_user_balance and
+                        self.has_old_orders and
+                        self.has_user_position and
+                        self.has_execution_band):
+                    self.active = True
+                    self.logger.info("Activating: %d (%d/%d)", self.position,
+                                    self.bids.available_limit, self.asks.available_limit)
+                elif not self.active:
+                    print(self.has_user_balance, self.has_old_orders, self.has_user_position, self.has_execution_band)
 
-            #self.logger.info("active = %s" % str(self.active))
-            if (self.active):
-                factor = Decimal(1) - Decimal(0.001) * self.position / self.max_position
-                self.fair_price = new_price * Decimal(factor)
-                self.spread = Decimal(0.00010)
-                self.update_orders()
+                #self.logger.info("active = %s" % str(self.active))
+                if (self.active):
+                    factor = Decimal(1) - Decimal(0.001) * self.position / self.max_position
+                    self.fair_price = new_price * Decimal(factor)
+                    self.spread = Decimal(0.00010)
+                    self.update_orders()
 
-        self.api.dispatch_batch()
-        return 0
-
-    def ftx_callback(self, data):
-        return self.common_callback(data)
-
-    def binance_s_callback(self, data):
-        return self.common_callback(data)
-
-    def pyth_xau_callback(self, data):
-        return self.common_callback(data)
-
-    def callback(self, source, raw_data):
-        #self.logger.info("<-%-10s: %s", source, raw_data)
-
-        if isinstance(raw_data, dict):
-            data = raw_data
-        else:
-            data = json.loads(raw_data)
-
-        rc = 0
-        if (source == 'tickspread'):
-            rc = self.tickspread_callback(data)
-        elif (source == 'ftx'):
-            rc = self.ftx_callback(data)
-        elif (source == 'binance-s'):
-            rc = self.binance_s_callback(data)
-        elif (source == 'pyth'):
-            rc = self.pyth_xau_callback(data)
-        return rc
+            self.api.dispatch_batch()
+            return 0
+        except Exception as e:
+            self.logger.error("Error in callback: %s", e)
+            sys.exit("Critical error in callback, stopping bot")
 
 
 async def main():
     if dex == True:
-        # api = TickSpreadDex(id_multiple=1000, env=env)
-        # mmaker = MarketMaker(api, tick_jump=0.5, orders_per_side=50,
-        #                  order_size=0.01, max_position=4000)
         pass
     else:
         api = TickSpreadAPI(id_multiple=1000, env=env)
-        # mmaker = MarketMaker(api, tick_jump=Decimal("0.2"), orders_per_side=10,
-        #                  order_size=Decimal("1.5"), max_position=Decimal("40.0"))
+        mmaker = MarketMaker(api, tick_jump=Decimal("0.1"), orders_per_side=10,
+                             order_size=Decimal("0.01"), max_position=Decimal("50.0"))
 
-        if args.market == "XAU-TEST":
-            mmaker = MarketMaker(api, tick_jump=Decimal("0.01"), orders_per_side=10,
-                            order_size=Decimal("0.20"), max_position=Decimal("50.0"))
-            
-        if args.market == "XAU":
-            mmaker = MarketMaker(api, tick_jump=Decimal("0.01"), orders_per_side=50,
-                            order_size=Decimal("0.05"), max_position=Decimal("5.0"))
-
-        if args.market == "ETH":
-            mmaker = MarketMaker(api, tick_jump=Decimal("0.1"), orders_per_side=10,
-                            order_size=Decimal("2.0"), max_position=Decimal("50.0"))
-
-        if args.market == "SOL":
-            mmaker = MarketMaker(api, tick_jump=Decimal("0.01"), orders_per_side=10,
-                            order_size=Decimal("20.0"), max_position=Decimal("500.0"))
-
-        if args.market == "ETH-TEST":
-            # mmaker = MarketMaker(api, tick_jump=Decimal("0.2"), orders_per_side8,
-            #                 order_size=Decimal("1.5"), max_position=Decimal("40.0"))
-            mmaker = MarketMaker(api, tick_jump=Decimal("1.0"), orders_per_side=10,
-                            order_size=Decimal("0.001"), max_position=Decimal("1.0"))
-            # mmaker = MarketMaker(api, tick_jump=Decimal("0.2"), orders_per_side=10,
-            #                 order_size=Decimal("0.2"), max_position=Decimal("1.0"))
-        
-        if args.market == "SOL-TEST":
-            mmaker = MarketMaker(api, tick_jump=Decimal("0.01"), orders_per_side=10,
-                            order_size=Decimal("0.020"), max_position=Decimal("20.0"))
-
-        if args.market == "BTC-TEST" or args.market == "BTC-PERP":
-            mmaker = MarketMaker(api, tick_jump=Decimal("1.0"), orders_per_side=10,
-                            order_size=Decimal("0.01"), max_position=Decimal("4.0"))
-
-        if args.market == "BTC" or args.market == "BTC-PERP":
-            mmaker = MarketMaker(api, tick_jump=Decimal("1.0"), orders_per_side=10,
-                            order_size=Decimal("0.08"), max_position=Decimal("6.0"))
         print("REGISTER")
         api.register('maker%s@tickspread.com' % id, tickspread_password)
         time.sleep(0.3)
@@ -998,46 +1068,22 @@ async def main():
             return 1
         print("STARTING")
 
-        #bybit_api = ByBitAPI()
-
-        #bitmex_api = BitMEXAPI()
-        #huobi_api = HuobiAPI()
-
         await api.connect()
-        await api.subscribe("market_data", {"symbol": args.market})
-        await api.subscribe("user_data", {"symbol": args.market})
-        api.on_message(mmaker.callback)
         
-        # These variables are not referred to anywhere, but an object is being created
-        # We're passing the mmaker callbacks
+        mmaker.load_state()
         
-        if args.external_market == 'XAU':
-            external_api = PythXauAPI()
-            external_api.subscribe_index_price(args.external_market)
-            external_api.on_message(mmaker.callback)
-        else:
-            binance_api = BinanceAPI()
-            binance_api.subscribe_futures(args.external_market)
-            binance_api.on_message(mmaker.callback)
+        # Initial price generation after loading state:
+        price_data = mmaker.generate_price()
+        mmaker.common_callback(price_data)
+        await asyncio.sleep(1)
+        
+        while True:
+            mmaker.validate_orders()
+            mmaker.save_state() 
+            price_data = mmaker.generate_price()
+            mmaker.common_callback(price_data)
+            await asyncio.sleep(1) 
 
-    # await bybit_api.connect()
-    # await bybit_api.subscribe()
-    # bybit_api.on_message(mmaker.callback)
-
-    # if dex == True:
-    #     binance_api.subscribe_futures('ETHUSDT')
-    # else:
-
-    # binance_api = BinanceAPI(
-    #     os.getenv('BINANCE_KEY'),
-    #     os.getenv('BINANCE_SECRET'))
-
-    # await bitmex_api.connect()
-    # bitmex_api.on_message(mmaker.callback)
-
-    # await huobi_api.connect()
-    # await huobi_api.subscribe()
-    # huobi_api.on_message(mmaker.callback)
     print("FINISH INIT")
 
 
