@@ -9,21 +9,11 @@ host = 'localhost'
 
 producer = Producer({'bootstrap.servers': '%s:9092' % host})
 
-topic = 'user_data'
+topic = 'results'
 key = 'transfer_balance'
 
 
 messages = [
-        {
-        "event": "transfer_balance",
-        "user_group_id": 0,
-        "user_id_from": 0,
-        "user_id_to": 4,
-        "asset": "testUSD",
-        "asset_id": 8,
-        "balance_amount": 10000000000,
-        "asset_precision": 6
-    },
     #     {
     #     "event": "transfer_balance",
     #     "user_group_id": 0,
@@ -54,16 +44,16 @@ messages = [
     #     "balance_amount": 10000000000,
     #     "asset_precision": 6
     # },
-        {
-        "event": "transfer_balance",
-        "user_group_id": 0,
-        "user_id_from": 0,
-        "user_id_to": 5,
-        "asset": "testUSD",
-        "asset_id": 8,
-        "balance_amount": 10000000000,
-        "asset_precision": 6
-    },
+    #     {
+    #     "event": "transfer_balance",
+    #     "user_group_id": 0,
+    #     "user_id_from": 0,
+    #     "user_id_to": 5,
+    #     "asset": "testUSD",
+    #     "asset_id": 8,
+    #     "balance_amount": 10000000000,
+    #     "asset_precision": 6
+    # },
 #         {
 #         "event": "transfer_balance",
 #         "user_group_id": 0,
@@ -154,7 +144,7 @@ messages = [
 ]
 
 for value in messages:
-    producer.produce(topic, json.dumps(value), key, 0)
+    producer.produce(topic, json.dumps(value), key, 3)
     print(value)
 producer.flush()
 
