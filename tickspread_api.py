@@ -183,6 +183,7 @@ class TickSpreadAPI:
             self.logger.info(batch)
             r = requests.post(url, headers={"authorization": (
                 "Bearer %s" % self.token)}, json=batch, timeout=5.0)
+            self.logger.info(r)
             #print(f'{str(time.process_time())} <- ')
         except Exception as e:
             print(e, flush=True)

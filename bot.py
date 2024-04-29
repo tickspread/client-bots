@@ -625,6 +625,7 @@ class MarketMaker:
         # When price falls, cancel bottom asks to maintain the desired number of orders. When price rises, cancel bottom bids.
         self.bids.maybe_cancel_bottom_orders()
         self.asks.maybe_cancel_bottom_orders()
+        self.api.dispatch_batch()
     
     def tickspread_market_data_partial(self, payload):
         print("MARKET DATA PARTIAL: ", payload)
@@ -975,7 +976,7 @@ async def main():
             #                 order_size=Decimal("0.2"), max_position=Decimal("1.0"))
         
         if args.market == "SOL-TEST":
-            mmaker = MarketMaker(api, tick_jump=Decimal("0.01"), orders_per_side=10,
+            mmaker = MarketMaker(api, tick_jump=Decimal("0.01"), orders_per_side=0,
                             order_size=Decimal("0.020"), max_position=Decimal("20.0"))
 
         if args.market == "BTC-TEST" or args.market == "BTC-PERP":
