@@ -47,6 +47,7 @@ from outside_api import ByBitAPI, BinanceAPI, BitMEXAPI, HuobiAPI, PythXauAPI
 import statistics
 from datetime import datetime
 from pyblake2 import blake2b
+import hashlib
 
 parser = argparse.ArgumentParser(
     description='Run a market maker bot on TickSpread exchange.')
@@ -71,7 +72,7 @@ log_file = args.log
 dex = True if args.dex == "true" else False
 tickspread_password = args.tickspread_password
 
-logging.basicConfig(level=logging.WARN,
+logging.basicConfig(level=logging.INFO,
                     format='%(asctime)s %(levelname)-8s %(message)s')
 if log_file != "shell":
     # log_handler = logging.handlers.WatchedFileHandler(
@@ -212,12 +213,15 @@ class MarketMakerSide:
             else:
                 steps_diff = +int(price_diff / self.tick_jump)
             self.top_order = self.old_top_order + steps_diff
-        self.parent.logger.debug(
-            "%s - top: %d => %d" %
+        self.parent.logger.info(
+            "___DEBUG NEW ORDER__ %s - top: %d => %d" %
             (side_to_str(self.side), self.old_top_order, self.top_order))
+        self.parent.logger.info(
+            "___DEBUG NEW PRICE__ of %s %s - top: %s => %s" %
+            (new_price, side_to_str(self.side), self.old_top_price, self.top_price))
 
     def maybe_cancel_top_orders(self):
-        #self.parent.logger.debug("maybe_cancel_top_orders: %d" % self.top_price)
+        self.parent.logger.info("maybe_cancel_top_orders: %d" % self.top_price)
         if (self.top_order > self.old_top_order):
             orders_to_remove = min(self.top_order - self.old_top_order,
                                    self.target_num_orders)
@@ -244,11 +248,11 @@ class MarketMakerSide:
             price_increment = +self.tick_jump
         price = initial_price
         for i in range(self.target_num_orders):
-            '''
+            
             self.parent.logger.info("index = %d (%d)",
                                     self.top_order + i,
                                     (self.top_order + i) % self.max_orders)
-            '''
+            
             if (self.top_order + i >=
                     self.old_top_order + self.target_num_orders):
                 #self.parent.logger.info("breaking at %d", self.top_order + i)
@@ -316,7 +320,7 @@ class MarketMaker:
     def __init__(self, api, *, logger=logging.getLogger(),
                  name="bot_example", version="0.0",
                  orders_per_side=8, max_position=400, tick_jump=10, order_size=0.5, leverage=10,
-                 initial_price=1000.0, volatility=0.001):
+                 initial_price="155.8", volatility="0.001"):
         # System
         self.api = api
         self.logger = logger
@@ -392,6 +396,9 @@ class MarketMaker:
         
         # Set the file name based on the current date
         self.state_filename = f"market_maker_state_{datetime.utcnow().strftime('%Y_%m_%d')}.json"
+        
+        self.initialized = asyncio.Event()  # Event to signal initialization completion
+        self.state_loaded = False
 
     def log_new(self, side, amount, price, clordid):
         self.logger.info("->NEW %s %s @ %s (%d)" %
@@ -471,9 +478,6 @@ class MarketMaker:
         order.state = OrderState.ACKED
         self.logger.info("Sent: %d, Received: %d",
                          order.auction_id_send, self.last_auction_id)
-        
-        # Save state only after order is acknowledged
-        self.save_state()
 
     def exec_reject(self, order):
         if (order.state != OrderState.PENDING):
@@ -551,8 +555,8 @@ class MarketMaker:
     def receive_exec(self, event, clordid):
         order = self.find_order_by_clordid(clordid)
         if (not order):
-            logging.warning("Received exec %s for unknown order: %d",
-                            event, clordid)
+            # logging.warning("Received exec %s for unknown order: %d",
+            #                 event, clordid)
             return
 
         self.logger.info("Received exec for order %d", order.clordid)
@@ -632,7 +636,10 @@ class MarketMaker:
         self.logger.info("update_orders")
         assert (self.active)
         self.bids.set_new_price(min(self.fair_price - self.spread, self.execution_band_high))
+        self.logger.info("SETTING NEW ASK PRICE. FAIR+SPREAD %s EXECUTION BAND LOW %s", self.fair_price + self.spread, self.execution_band_low)
         self.asks.set_new_price(max(self.fair_price + self.spread, self.execution_band_low))
+        
+        
 
         # When price falls, cancel top bids. When price rises, cancel top asks.
         self.bids.maybe_cancel_top_orders()
@@ -649,6 +656,8 @@ class MarketMaker:
         # When price falls, cancel bottom asks to maintain the desired number of orders. When price rises, cancel bottom bids.
         self.bids.maybe_cancel_bottom_orders()
         self.asks.maybe_cancel_bottom_orders()
+        
+        self.api.dispatch_batch()
     
     def tickspread_market_data_partial(self, payload):
         print("MARKET DATA PARTIAL: ", payload)
@@ -673,6 +682,10 @@ class MarketMaker:
         self.execution_band_high = Decimal(execution_band['high'])
         self.execution_band_low = Decimal(execution_band['low'])
         self.has_execution_band = True
+        
+        if self.has_execution_band:
+            if self.has_user_balance and self.has_old_orders and self.has_user_position:
+                self.initialized.set()  # Ensure all are still true and set
 
     def tickspread_user_data_partial(self, payload):
         print("USER DATA PARTIAL")
@@ -762,6 +775,9 @@ class MarketMaker:
             self.position = 0
         self.has_user_position = True
         print("Read user_data partial successfully")
+        
+        if self.has_user_balance and self.has_old_orders and self.has_user_position and self.has_execution_band:
+            self.initialized.set()  # Signal that initialization is complete
 
     def cancel_old_orders(self):
         print("Old orders:")
@@ -840,6 +856,7 @@ class MarketMaker:
                     return 0
                 self.execution_band_high = Decimal(execution_band['high'])
                 self.execution_band_low = Decimal(execution_band['low'])
+                self.update_orders()
         elif (event == "acknowledge_order" or event == "maker_order"
               or event == "delete_order" or event == "abort_create"
               or event == "active_order" or event == "reject_order"
@@ -852,6 +869,7 @@ class MarketMaker:
             clordid = int(payload['client_order_id'])
             #print("clordid = %d" % clordid)
             self.receive_exec(event, clordid)
+            self.update_orders()
             #print("fin accept")
         elif (event == "taker_trade" or event == "maker_trade" or
               event == "liquidation" or event == "auto_deleverage"):
@@ -875,6 +893,7 @@ class MarketMaker:
             #print("clordid = %d, execution_amount = %d" % (clordid, execution_amount))
             self.receive_exec_trade(
                 event, clordid, execution_amount, payload['side'])
+            self.update_orders()
         elif (event == "trade"):
             pass
         elif (event == "balance"):
@@ -892,44 +911,74 @@ class MarketMaker:
             print(data)
         return 0
     
-    def validate_orders(self):
+    async def validate_orders(self):
         if not self.active:
-            self.logger.error("Market maker is not active, cannot validate orders.")
-            raise ValueError("Market maker is not active, cannot validate orders.")
+            print("Market maker is not active, cannot validate orders.")
+            return False
+        
+        timeout = 20
+        check_interval = 0.5
+        elapsed_time = 0
+        while elapsed_time < timeout:
+            non_empty_orders = [order for order in self.bids.orders + self.asks.orders if order.state != OrderState.EMPTY]
+            maker_ready = all(order.state == OrderState.MAKER for order in non_empty_orders)
+            pending_cancellations = [order for order in non_empty_orders if order.cancel == CancelState.PENDING]
 
-        # Exclude empty orders from validation
-        non_empty_orders = [order for order in self.bids.orders + self.asks.orders if order.state != OrderState.EMPTY]
-        non_maker_orders = [order for order in non_empty_orders if order.state != OrderState.MAKER]
-        if non_maker_orders:
-            raise ValueError("There are orders not in MAKER state, validation failed.")
+            if maker_ready and not pending_cancellations:
+                break
+            
+            await asyncio.sleep(check_interval)
+            elapsed_time += check_interval
                 
-        pending_cancels = [order for order in non_empty_orders if order.cancel == CancelState.PENDING]
-        if pending_cancels:
-            raise ValueError("There are pending cancellations, cannot proceed.")
+        if elapsed_time >= timeout:
+            if pending_cancellations:
+                self.logger.error("Pending cancellations did not clear after timeout.")
+                for order in pending_cancellations:
+                    self.logger.error(f"Still pending: Order ID {order.clordid}")
+                return False
+            if not maker_ready:
+                non_maker_orders = [order for order in non_empty_orders if order.state != OrderState.MAKER]
+                non_maker_orders_str = ', '.join(str(order) for order in non_maker_orders)
+                self.logger.error("Timeout reached: Not all non-empty orders transitioned to MAKER state.")
+                self.logger.error(f'NON MAKER ORDERS: {non_maker_orders_str}')
+                return False
 
         maker_bids = [order for order in self.bids.orders if order.state == OrderState.MAKER]
         maker_asks = [order for order in self.asks.orders if order.state == OrderState.MAKER]
-        if len(maker_bids) != self.orders_per_side or len(maker_asks) != self.orders_per_side:
-            raise ValueError("Incorrect number of maker orders on either side.")
+        
+        self.asks.debug_orders()
+        self.bids.debug_orders()
 
-        # Check proximity to fair price within tick_jump
-        for order in maker_bids:
-            if not (self.fair_price - self.tick_jump <= order.price <= self.fair_price):
-                raise ValueError("Bid order price is not within the expected range from the fair price.")
+        top_bid_index = self.bids.top_order % self.bids.max_orders
+        top_ask_index = self.asks.top_order % self.asks.max_orders
 
-        for order in maker_asks:
-            if not (self.fair_price <= order.price <= self.fair_price + self.tick_jump):
-                raise ValueError("Ask order price is not within the expected range from the fair price.")
+        top_bid = self.bids.orders[top_bid_index]
+        top_ask = self.asks.orders[top_ask_index]
 
-        print("All validations passed, ready for price generation.")
+        # Check proximity to fair price within tick_jump and spread
+        bid_price_limit = self.fair_price - (self.spread + self.tick_jump)
+        if not (bid_price_limit <= top_bid.price <= self.fair_price):
+            self.logger.error(f"Top bid order price {top_bid.price} is not within the expected range from the fair price {self.fair_price}, adjusted by spread and tick jump downwards to {bid_price_limit}.")
+            return False
+
+        ask_price_limit = self.fair_price + (self.spread + self.tick_jump)
+        if not (self.fair_price <= top_ask.price <= ask_price_limit):
+            self.logger.error(f"Top ask order price {top_ask.price} is not within the expected range from the fair price {self.fair_price}, adjusted by spread and tick jump upwards to {ask_price_limit}.")
+            return False
+                
+        if len(maker_bids) != self.bids.target_num_orders or len(maker_asks) != self.asks.target_num_orders:
+            self.logger.error(f"Incorrect number of maker orders on either side. BIDS: {self.bids.target_num_orders} ASKS: {self.asks.target_num_orders}")
+            return False
+        
+        return True
         
     def save_state(self):
         try:
             state = {
                 'seed': self.seed,
                 'volatility': str(self.volatility),
-                'tick_counter': self.current_tick_counter,
-                'last_price': str(self.current_base_price),
+                'tick_counter': self.next_tick_counter,
+                'last_price': str(self.next_base_price),
                 'base_price': str(self.initial_price)
             }
             with open(self.state_filename, 'w') as f:
@@ -937,15 +986,13 @@ class MarketMaker:
             # Since it was saved, update current states
             self.current_tick_counter = self.next_tick_counter
             self.current_base_price = self.next_base_price
-            print("State saved successfully.")
+            self.logger.info(f"State saved successfully of price {self.current_base_price} and tick {self.current_tick_counter}")
         except Exception as e:
             self.logger.error(f"Failed to save state: {e}")
             raise Exception(f"Failed to save state: {e}") 
     
     def generate_price(self):
-        if self.seed is None:
-            self.seed = blake2b(datetime.utcnow().strftime('%Y%m%d').encode(), digest_size=32).hexdigest()
-
+        print(f"GENERATING NEW PRICE BASED ON {self.current_base_price} AND SEED {self.seed} AND TICK {self.current_tick_counter} +1")
         tick = self.current_tick_counter + 1
         combined_value = bytes(self.seed + str(tick), 'ascii')
         hash_value = blake2b(combined_value, digest_size=32).digest()
@@ -955,7 +1002,8 @@ class MarketMaker:
 
         new_price = self.current_base_price * (1 + Decimal(normal_return))
         self.next_base_price = new_price  # Update the base price for the next generation
-        self.next_tick_counter = tick    
+        self.next_tick_counter = tick   
+        print(f"NEW PRICE {new_price}")
 
         return {"p": new_price}
 
@@ -967,18 +1015,22 @@ class MarketMaker:
                     seed = state['seed']
                     volatility = Decimal(state['volatility'])
                     current_tick_counter = int(state['tick_counter'])
-                    initial_price = Decimal(state['initial_price'])
+                    initial_price = Decimal(state['base_price'])
                     current_base_price = Decimal(state['last_price'])
 
                 # Replay from initial price to verify current base price
                 price = initial_price
-                for tick in range(current_tick_counter):
+                print(f"Beginning Price = {price} for Seed {seed} and tick {current_tick_counter}")
+                for tick in range(current_tick_counter + 1):
                     combined_value = bytes(seed + str(tick), 'ascii')
                     hash_value = blake2b(combined_value, digest_size=32).digest()
                     unsigned_int = int.from_bytes(hash_value[:8], 'little')
                     unit_range = float(unsigned_int) / (2**64 - 1)
-                    normal_return = statistics.NormalDist(mu=0.0, sigma=float(self.volatility)).inv_cdf(unit_range)
+                    normal_return = statistics.NormalDist(mu=0.0, sigma=float(volatility)).inv_cdf(unit_range)
                     price *= (1 + Decimal(normal_return))
+                    self.logger.info(f"Tick {tick}: Price = {price}")
+                    
+                self.logger.info(f"Expected base price: {current_base_price}, Calculated base price: {price}")
 
                 if price != current_base_price:
                     raise ValueError("Replay failed: recalculated price does not match the saved current base price")
@@ -990,13 +1042,16 @@ class MarketMaker:
                 self.current_tick_counter = current_tick_counter
                 self.current_base_price = current_base_price
                 
+                self.state_loaded = True
                 print("State loaded and replay verified successfully.")
             else:
                 self.seed = hashlib.blake2b(datetime.utcnow().strftime('%Y%m%d').encode(), digest_size=32).hexdigest()
-                self.current_tick_counter = 0
-                self.current_base_price = Decimal(self.initial_price)
+                self.next_tick_counter = -1
+                self.next_base_price = Decimal(self.initial_price)
                 self.initial_price = Decimal(self.initial_price)
                 self.volatility = Decimal(self.volatility)
+                self.state_loaded = False
+                self.logger.info(f"GENERATED SEED {self.seed}")
             
         except Exception as e:
             self.logger.error("Failed to load or verify state through replay: %s", e)
@@ -1007,11 +1062,9 @@ class MarketMaker:
             # self.logger.info("common_callback")
             
             self.logger.info("callback data:", data)
-            
             new_price = None
             if ("p" in data):
                 new_price = Decimal(data["p"])
-
             if ("data" in data):
                 if ("p" in data["data"]):
                     new_price = Decimal(data["data"]["p"])
@@ -1037,22 +1090,34 @@ class MarketMaker:
                 if (self.active):
                     factor = Decimal(1) - Decimal(0.001) * self.position / self.max_position
                     self.fair_price = new_price * Decimal(factor)
+                    #self.spread = Decimal(1.00000001)
                     self.spread = Decimal(0.00010)
                     self.update_orders()
 
-            self.api.dispatch_batch()
             return 0
         except Exception as e:
             self.logger.error("Error in callback: %s", e)
             sys.exit("Critical error in callback, stopping bot")
+            
+    def callback(self, source, raw_data):
+        #self.logger.info("<-%-10s: %s", source, raw_data)
 
+        if isinstance(raw_data, dict):
+            data = raw_data
+        else:
+            data = json.loads(raw_data)
+
+        rc = 0
+        if (source == 'tickspread'):
+            rc = self.tickspread_callback(data)
+        return rc
 
 async def main():
     if dex == True:
         pass
     else:
         api = TickSpreadAPI(id_multiple=1000, env=env)
-        mmaker = MarketMaker(api, tick_jump=Decimal("0.1"), orders_per_side=10,
+        mmaker = MarketMaker(api, tick_jump=Decimal("0.05"), orders_per_side=10,
                              order_size=Decimal("0.01"), max_position=Decimal("50.0"))
 
         print("REGISTER")
@@ -1069,20 +1134,35 @@ async def main():
         print("STARTING")
 
         await api.connect()
+        await api.subscribe("market_data", {"symbol": args.market})
+        await api.subscribe("user_data", {"symbol": args.market})
+        api.on_message(mmaker.callback)
+        # Wait for initial data to be fully processed
+        await mmaker.initialized.wait()  # Wait until initial setup conditions are confirmed through data handlers
         
         mmaker.load_state()
         
-        # Initial price generation after loading state:
-        price_data = mmaker.generate_price()
-        mmaker.common_callback(price_data)
-        await asyncio.sleep(1)
-        
-        while True:
-            mmaker.validate_orders()
-            mmaker.save_state() 
+        if mmaker.state_loaded:
+            # Use the price loaded from state for the first callback
             price_data = mmaker.generate_price()
             mmaker.common_callback(price_data)
-            await asyncio.sleep(1) 
+        else:
+            # If no state was loaded, start with the initial price generation
+            initial_price_data = {"p": mmaker.next_base_price}
+            mmaker.common_callback(initial_price_data)
+
+        await asyncio.sleep(10)  # Wait a bit before starting the main loop
+        
+        while True:
+            validated = await mmaker.validate_orders()
+            if validated:
+                mmaker.save_state()
+                price_data = mmaker.generate_price()
+                mmaker.common_callback(price_data)
+            else:
+                print("Order validation failed.")
+                break
+            await asyncio.sleep(10)
 
     print("FINISH INIT")
 
