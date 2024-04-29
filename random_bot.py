@@ -72,7 +72,7 @@ log_file = args.log
 dex = True if args.dex == "true" else False
 tickspread_password = args.tickspread_password
 
-logging.basicConfig(level=logging.INFO,
+logging.basicConfig(level=logging.DEBUG,
                     format='%(asctime)s %(levelname)-8s %(message)s')
 if log_file != "shell":
     # log_handler = logging.handlers.WatchedFileHandler(
@@ -916,32 +916,49 @@ class MarketMaker:
             print("Market maker is not active, cannot validate orders.")
             return False
         
-        timeout = 20
-        check_interval = 0.5
-        elapsed_time = 0
-        while elapsed_time < timeout:
-            non_empty_orders = [order for order in self.bids.orders + self.asks.orders if order.state != OrderState.EMPTY]
-            maker_ready = all(order.state == OrderState.MAKER for order in non_empty_orders)
-            pending_cancellations = [order for order in non_empty_orders if order.cancel == CancelState.PENDING]
+        non_empty_orders = [order for order in self.bids.orders + self.asks.orders if order.state != OrderState.EMPTY]
+        maker_ready = all(order.state == OrderState.MAKER for order in non_empty_orders)
+        pending_cancellations = [order for order in non_empty_orders if order.cancel == CancelState.PENDING]
+        if pending_cancellations:
+            #self.logger.error("Pending cancellations did not clear after timeout.")
+            for order in pending_cancellations:
+                self.logger.info(f"Still pending: Order ID {order.clordid}")
+            return False
+        if not maker_ready:
+            non_maker_orders = [order for order in non_empty_orders if order.state != OrderState.MAKER]
+            non_maker_orders_str = ', '.join(str(order) for order in non_maker_orders)
+            #self.logger.info("Timeout reached: Not all non-empty orders transitioned to MAKER state.")
+            self.logger.info(f'NON MAKER ORDERS: {non_maker_orders_str}')
+            return False
+        # timeout = 20
+        # check_interval = 0.5
+        # elapsed_time = 0
+        # while elapsed_time < timeout:
+        #     non_empty_orders = [order for order in self.bids.orders + self.asks.orders if order.state != OrderState.EMPTY]
+        #     maker_ready = all(order.state == OrderState.MAKER for order in non_empty_orders)
+        #     pending_cancellations = [order for order in non_empty_orders if order.cancel == CancelState.PENDING]
 
-            if maker_ready and not pending_cancellations:
-                break
+        #     if maker_ready and not pending_cancellations:
+        #         break
             
-            await asyncio.sleep(check_interval)
-            elapsed_time += check_interval
+        #     for order in non_empty_orders:
+        #         self.logger.info(f"Checking order ID {order.clordid}, State {order.state}, Cancel State {order.cancel}")
+            
+        #     await asyncio.sleep(check_interval)
+        #     elapsed_time += check_interval
                 
-        if elapsed_time >= timeout:
-            if pending_cancellations:
-                self.logger.error("Pending cancellations did not clear after timeout.")
-                for order in pending_cancellations:
-                    self.logger.error(f"Still pending: Order ID {order.clordid}")
-                return False
-            if not maker_ready:
-                non_maker_orders = [order for order in non_empty_orders if order.state != OrderState.MAKER]
-                non_maker_orders_str = ', '.join(str(order) for order in non_maker_orders)
-                self.logger.error("Timeout reached: Not all non-empty orders transitioned to MAKER state.")
-                self.logger.error(f'NON MAKER ORDERS: {non_maker_orders_str}')
-                return False
+        # if elapsed_time >= timeout:
+        #     if pending_cancellations:
+        #         self.logger.error("Pending cancellations did not clear after timeout.")
+        #         for order in pending_cancellations:
+        #             self.logger.error(f"Still pending: Order ID {order.clordid}")
+        #         return False
+        #     if not maker_ready:
+        #         non_maker_orders = [order for order in non_empty_orders if order.state != OrderState.MAKER]
+        #         non_maker_orders_str = ', '.join(str(order) for order in non_maker_orders)
+        #         self.logger.error("Timeout reached: Not all non-empty orders transitioned to MAKER state.")
+        #         self.logger.error(f'NON MAKER ORDERS: {non_maker_orders_str}')
+        #         return False
 
         maker_bids = [order for order in self.bids.orders if order.state == OrderState.MAKER]
         maker_asks = [order for order in self.asks.orders if order.state == OrderState.MAKER]
@@ -1151,18 +1168,21 @@ async def main():
             initial_price_data = {"p": mmaker.next_base_price}
             mmaker.common_callback(initial_price_data)
 
-        await asyncio.sleep(10)  # Wait a bit before starting the main loop
-        
-        while True:
+        attempts = 0
+        while attempts < 30:
             validated = await mmaker.validate_orders()
             if validated:
                 mmaker.save_state()
                 price_data = mmaker.generate_price()
                 mmaker.common_callback(price_data)
+                attempts = 0
             else:
-                print("Order validation failed.")
-                break
-            await asyncio.sleep(10)
+                print("Attempting order validation again...")
+                attempts += 1
+                if attempts >= 30:
+                    print("Failed to validate orders after multiple attempts.")
+                    break
+            await asyncio.sleep(1)
 
     print("FINISH INIT")
 
