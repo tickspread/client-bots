@@ -536,7 +536,7 @@ class MarketMaker:
             self.exec_ack(order)
         elif (event == "maker_order"):
             self.exec_maker(order)
-        elif (event == "delete_order"):
+        elif (event == "delete_order") or (event == "system_delete_order"):
             self.exec_remove(order)
         elif (event == "abort_create"):
             self.exec_remove(order)
@@ -816,7 +816,7 @@ class MarketMaker:
                 self.execution_band_high = Decimal(execution_band['high'])
                 self.execution_band_low = Decimal(execution_band['low'])
         elif (event == "acknowledge_order" or event == "maker_order"
-              or event == "delete_order" or event == "abort_create"
+              or event == "delete_order" or event == "system_delete_order" or event == "abort_create"
               or event == "active_order" or event == "reject_order"
               or event == "reject_cancel"):
             #print("receive accept: ", event)
