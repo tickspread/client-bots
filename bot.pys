@@ -1,13 +1,26 @@
-# -*- coding: utf-8 -*-
-"""Quiver Bot (AMM-style)
 
-This bot doesn't look at external markets.
-Instead it trades on quiver only, simulating the behavior of an AMM (but for futures)
-It checks its own balance & position.
-It takes a liquidity parameter, a "neutral_price" (where position is zero).
-It also takes a maximum price (so it is intended for futures that do have maximum prices)
+# -*- coding: utf-8 -*-
+"""Example TickSpread Bot
+
+This module gives an example market-making bot that listens to market-data
+feeds from external exchanges (Binance, Huobi, BitMEX and Bybit) and
+puts orders at TickSpread.
+
+The bot controls the state for each order, listening to update at the
+user-data feed. It respects a maximum position and attemps to maintain a target
+number of open orders, subject to a maximum.
+
+All orders sent and updates received are logged at "bot.log".
+
+Example:
+    To run the bot::
+
+        $ python3 bot.py
 
 Use this bot are your own risk! No guarantees -- it probably has bugs!
+
+Todo:
+    * External real-time parameter changes
 
 """
 
@@ -26,12 +39,7 @@ import os
 import argparse
 import logging.handlers
 
-import scipy
-
-from scipy.optimize import bisect
-
-
-from decimal import Decimal, ROUND_DOWN
+from decimal import Decimal
 from tickspread_api import TickSpreadAPI
 # from python_loopring.tickspread_dex import TickSpreadDex
 from outside_api import ByBitAPI, BinanceAPI, BitMEXAPI, HuobiAPI, PythXauAPI
@@ -44,28 +52,23 @@ parser.add_argument('--env', dest='env', default="prod",
                     help='set the env to run the account (default: prod)')
 parser.add_argument('--log', dest='log', default="shell",
                     help='set the output for the logs (default: shell)')
+parser.add_argument('--dex', dest='dex', default="false",
+                    help='set the tyoe of exchange (default: prod)')
 parser.add_argument('--tickspread_password', dest='tickspread_password', default="maker",
                     help='set the tickspread_password to login (default: maker)')
 parser.add_argument('--market', dest='market', required=True)
+parser.add_argument('--external_market', dest='external_market', required=True)
 parser.add_argument('--money_asset', dest='money_asset', required=True)
-
-parser.add_argument('--liquidity', dest='liquidity', required=True)
-parser.add_argument('--neutral_price', dest='neutral_price', required=True)
-parser.add_argument('--max_position', dest='max_position', required=True)
-parser.add_argument('--tick_jump', dest='tick_jump', required=True)
-parser.add_argument('--max_price', dest='max_price', required=True)
-parser.add_argument('--amount_precision', dest='amount_precision', required=True)
-
 
 args = parser.parse_args()
 id = args.id
 env = args.env
 log_file = args.log
+dex = True if args.dex == "true" else False
 tickspread_password = args.tickspread_password
 
 logging.basicConfig(level=logging.INFO,
                     format='%(asctime)s %(levelname)-8s %(message)s')
-
 if log_file != "shell":
     # log_handler = logging.handlers.WatchedFileHandler(
     #     '/home/ubuntu/store/logs/bot_%s.log' % id)
@@ -74,9 +77,11 @@ if log_file != "shell":
     logger.removeHandler(logger.handlers[0])
     logger.addHandler(log_handler)
 
+
 class Side(Enum):
     BID = 1
     ASK = 2
+
 
 def str_to_side(side):
     if side == "bid":
@@ -86,6 +91,7 @@ def str_to_side(side):
     else:
         return 0
 
+
 def side_to_str(side):
     if (side == Side.BID):
         return "bid"
@@ -94,12 +100,14 @@ def side_to_str(side):
     else:
         return "bug"
 
+
 class OrderState(Enum):
     EMPTY = 0
     PENDING = 1
     ACKED = 2
     MAKER = 3
     ACTIVE = 4
+
 
 def order_state_to_str(state):
     if (state == OrderState.EMPTY):
@@ -115,9 +123,11 @@ def order_state_to_str(state):
     else:
         return "bug"
 
+
 class CancelState(Enum):
     NORMAL = 0
     PENDING = 1
+
 
 def order_cancel_to_str(cancel):
     if (cancel == CancelState.NORMAL):
@@ -127,20 +137,9 @@ def order_cancel_to_str(cancel):
     else:
         return "?"
 
+
 MAX_CANCEL_RETRIES = 50
 
-def f(p):
-    assert 0 < p < 1, "p must be between 0 and 1"
-    return math.log(p) - math.log(1.0 - p)
-
-def inverse_f(y):
-    min_p = 0.00000001
-    max_p = 0.99999999
-    if f(min_p) >= y:
-        return 0
-    if f(max_p) <= y:
-        return 1
-    return bisect(lambda p: f(p)-y, min_p, max_p)
 
 class Order:
     def __init__(self, side, logger):
@@ -173,42 +172,18 @@ class MarketMakerSide:
         self.side = side
         self.target_num_orders = target_num_orders
         self.max_orders = max_orders
-        self.available_limit= Decimal(available_limit)
-        self.tick_jump = Decimal(tick_jump)
+        self.order_size = order_size
+        self.available_limit = available_limit
+        self.tick_jump = tick_jump
 
         self.last_status_time = 0.0
-        self.max_order_size = Decimal(order_size)
 
         self.top_order = 0
         self.top_price = None
         self.orders = []
         for i in range(self.max_orders):
             self.orders.append(Order(self.side, self.parent.logger))
-    
-    def order_size(self, price):
-        #return self.order_size;	 // Only for linear AMM
-        if (price <= self.tick_jump): return 0
-        elif (price >= self.parent.max_price - self.tick_jump): return 0
-        
-        if self.side == Side.BID:
-            p_0 = float(price)/float(self.parent.max_price)
-            p_1 = float(price + self.tick_jump)/float(self.parent.max_price)
-        else:
-            p_0 = float(price - self.tick_jump)/float(self.parent.max_price)
-            p_1 = float(price)/float(self.parent.max_price)
 
-        size = (f(p_1)-f(p_0)) * float(self.parent.liquidity)
-                
-        digits = self.parent.amount_precision
-        size = round(size - 0.5/10**digits, digits)
-        size = Decimal(size)
-        
-        if (size > self.max_order_size):
-            size = self.max_order_size
-
-        print("Order size: ", str(size))
-        return size
-    
     def debug_orders(self):
         for i in range(self.max_orders):
             index = (self.top_order + i) % (self.max_orders)
@@ -264,11 +239,12 @@ class MarketMakerSide:
         else:
             price_increment = +self.tick_jump
         price = initial_price
-
         for i in range(self.target_num_orders):
+            '''
             self.parent.logger.info("index = %d (%d)",
                                     self.top_order + i,
                                     (self.top_order + i) % self.max_orders)
+            '''
             if (self.top_order + i >=
                     self.old_top_order + self.target_num_orders):
                 #self.parent.logger.info("breaking at %d", self.top_order + i)
@@ -276,13 +252,10 @@ class MarketMakerSide:
                 break
             index = (self.top_order + i) % (self.max_orders)
             order = self.orders[index]
-
             if (order.state == OrderState.EMPTY):
-                order_size = self.order_size(price)
-                size = min(order_size, self.available_limit)
-                
+                size = min(self.order_size, self.available_limit)
                 self.parent.logger.info(
-                    "Found empty order %d, will send NEW with size %f", index, size)
+                    "Found empty order %d, will send NEW with size %d", index, size)
                 if (size > 0):
                     self.parent.send_new(order, size, price)
             if (order.state != OrderState.EMPTY
@@ -310,8 +283,7 @@ class MarketMakerSide:
                 order = self.orders[index]
 
                 if (order.state == OrderState.EMPTY):
-                    order_size = self.order_size(price)
-                    size = min(order_size, self.available_limit)
+                    size = min(self.order_size, self.available_limit)
                     if (size > 0):
                         self.parent.send_new(order, size, price)
 
@@ -339,8 +311,7 @@ class MarketMakerSide:
 class MarketMaker:
     def __init__(self, api, *, logger=logging.getLogger(),
                  name="bot_example", version="0.0",
-                 orders_per_side=8, max_position=400, tick_jump=10, order_size=0.5, leverage=1,
-                 max_price=100000, amount_precision=3, liquidity=100.0):
+                 orders_per_side=8, max_position=400, tick_jump=10, order_size=0.5, leverage=10):
         # System
         self.api = api
         self.logger = logger
@@ -371,34 +342,35 @@ class MarketMaker:
         self.old_orders = []
 
         self.has_user_position = False
-        self.position = Decimal(0)
+        self.position = 0
         self.position_entry_price = 0
         self.position_liquidation_price = 0
         self.position_total_margin = 0
         self.position_funding = 0
         
+        if dex == True:
+            self.has_user_balance = True
+            self.has_old_orders = True
+            self.has_user_position = True
+
         # PnL
         self.gross_profit = 0
         self.fees_paid = 0
 
         # Parameters
-        self.tick_jump = Decimal(tick_jump)
-        self.order_size = Decimal(order_size)
-        self.max_price = Decimal(max_price)
+        self.tick_jump = tick_jump
+        self.order_size = order_size
         self.leverage = leverage
         self.symbol = args.market
         self.money = args.money_asset
-        self.max_position = Decimal(max_position)
-        self.neutral_price = Decimal(args.neutral_price)
-        self.amount_precision = int(amount_precision) # Integer
-        self.liquidity = Decimal(liquidity)
+        self.max_position = max_position
 
         # State
         self.real = True
         self.active = False
         self.fair_price = None
         self.spread = None
-        
+
     def log_new(self, side, amount, price, clordid):
         self.logger.info("->NEW %s %s @ %s (%d)" %
                          (side_to_str(side), amount, price, clordid))
@@ -432,9 +404,13 @@ class MarketMaker:
     def send_cancel(self, order):
         self.log_cancel(order.side, order.amount_left,
                         order.price, order.clordid)
+
         if (self.real):
             self.register_cancel(order)
             self.api.delete_order(order.clordid, symbol=self.symbol, asynchronous=True, batch=True)
+        
+        if dex:
+            self._delete_order(order)
 
     def register_new(self, order, clordid, amount, price):
         assert (order.state == OrderState.EMPTY)
@@ -627,15 +603,11 @@ class MarketMaker:
             self.position -= execution_amount
             self.bids.available_limit += execution_amount
 
-        ## Update prices (!)
-        new_price = self.calculate_amm_price()
-        self.set_new_price(new_price)
-
     def update_orders(self):
         self.logger.info("update_orders")
         assert (self.active)
-        self.bids.set_new_price(min(self.fair_price * (Decimal(1.0) - self.spread), self.execution_band_high))
-        self.asks.set_new_price(max(self.fair_price * (Decimal(1.0) + self.spread), self.execution_band_low))
+        self.bids.set_new_price(min(self.fair_price - self.spread, self.execution_band_high))
+        self.asks.set_new_price(max(self.fair_price + self.spread, self.execution_band_low))
 
         # When price falls, cancel top bids. When price rises, cancel top asks.
         self.bids.maybe_cancel_top_orders()
@@ -652,34 +624,6 @@ class MarketMaker:
         # When price falls, cancel bottom asks to maintain the desired number of orders. When price rises, cancel bottom bids.
         self.bids.maybe_cancel_bottom_orders()
         self.asks.maybe_cancel_bottom_orders()
-        self.api.dispatch_batch()
-
-    def set_new_price(self, new_price):
-        if (new_price != None):
-            if (not self.active and
-                    self.has_user_balance and
-                    self.has_old_orders and
-                    self.has_user_position and
-                    self.has_execution_band):
-                self.active = True
-                self.logger.info("Activating: %d (%d/%d)", self.position,
-                                 self.bids.available_limit, self.asks.available_limit)
-
-            #self.logger.info("active = %s" % str(self.active))
-            if (self.active):
-                factor = Decimal(1) - Decimal(0.001) * self.position / self.max_position
-                self.fair_price = new_price * Decimal(factor)
-                self.spread = Decimal(0.00010)
-                self.update_orders()
-    
-    def calculate_amm_price(self):
-        y_delta = -float(self.position) / float(self.liquidity)
-        p_0 = float(self.neutral_price) / float(self.max_price)        
-        y_0 = f(p_0)
-        p = inverse_f(y_0 + y_delta)
-        print("calculate_amm_price", y_delta, p_0, y_0, p)
-                
-        return Decimal(p * float(self.max_price))
     
     def tickspread_market_data_partial(self, payload):
         print("MARKET DATA PARTIAL: ", payload)
@@ -696,6 +640,7 @@ class MarketMaker:
         if (not 'low' in execution_band):
             logging.warning("No low in execution_band")
             return
+            
         
         print(execution_band)
         time.sleep(5.0)
@@ -785,22 +730,13 @@ class MarketMaker:
                 self.position_funding = funding
                 found_symbol_position = True
 
+
         if (not found_symbol_position):
             logging.warning(
                 "Could not find %s position in partial" % self.symbol)
-            response = input("WARNING: Set position to zero? (y|n): ")
-            if (response == "y"):
-                self.position = 0
-            else:
-                return
+            self.position = 0
         self.has_user_position = True
-
         print("Read user_data partial successfully")
-        
-        #input("Press key to continue")
-
-        new_price = self.calculate_amm_price()
-        self.set_new_price(new_price)
 
     def cancel_old_orders(self):
         print("Old orders:")
@@ -871,8 +807,6 @@ class MarketMaker:
             
             if ('execution_band' in payload):
                 execution_band = payload['execution_band']
-                print("New execution bands: " + str(execution_band))
-                
                 if (not 'high' in execution_band):
                     self.logger.warning("No high in execution_band")
                     return 0
@@ -881,7 +815,6 @@ class MarketMaker:
                     return 0
                 self.execution_band_high = Decimal(execution_band['high'])
                 self.execution_band_low = Decimal(execution_band['low'])
-                self.update_orders()
         elif (event == "acknowledge_order" or event == "maker_order"
               or event == "delete_order" or event == "abort_create"
               or event == "active_order" or event == "reject_order"
@@ -894,7 +827,6 @@ class MarketMaker:
             clordid = int(payload['client_order_id'])
             #print("clordid = %d" % clordid)
             self.receive_exec(event, clordid)
-            self.update_orders()
             #print("fin accept")
         elif (event == "taker_trade" or event == "maker_trade" or
               event == "liquidation" or event == "auto_deleverage"):
@@ -918,7 +850,6 @@ class MarketMaker:
             #print("clordid = %d, execution_amount = %d" % (clordid, execution_amount))
             self.receive_exec_trade(
                 event, clordid, execution_amount, payload['side'])
-            self.update_orders()
         elif (event == "trade"):
             pass
         elif (event == "balance"):
@@ -936,6 +867,55 @@ class MarketMaker:
             print(data)
         return 0
 
+    def common_callback(self, data):
+        # self.logger.info("common_callback")
+        
+        self.logger.info("callback data:", data)
+        
+        new_price = None
+        if ("p" in data):
+            new_price = Decimal(data["p"])
+
+        if ("data" in data):
+            if ("p" in data["data"]):
+                new_price = Decimal(data["data"]["p"])
+            else:
+                for trade_line in data["data"]:
+                    if ("price" in trade_line):
+                        new_price = Decimal(trade_line["price"])
+        
+        self.logger.info("new_price = %.2f" % new_price)
+        if (new_price != None):
+            if (not self.active and
+                    self.has_user_balance and
+                    self.has_old_orders and
+                    self.has_user_position and
+                    self.has_execution_band):
+                self.active = True
+                self.logger.info("Activating: %d (%d/%d)", self.position,
+                                 self.bids.available_limit, self.asks.available_limit)
+            elif not self.active:
+                print(self.has_user_balance, self.has_old_orders, self.has_user_position, self.has_execution_band)
+
+            #self.logger.info("active = %s" % str(self.active))
+            if (self.active):
+                factor = Decimal(1) - Decimal(0.004) * self.position / self.max_position
+                self.fair_price = new_price * Decimal(factor)
+                self.spread = Decimal(0.00010)
+                self.update_orders()
+
+        self.api.dispatch_batch()
+        return 0
+
+    def ftx_callback(self, data):
+        return self.common_callback(data)
+
+    def binance_s_callback(self, data):
+        return self.common_callback(data)
+
+    def pyth_xau_callback(self, data):
+        return self.common_callback(data)
+
     def callback(self, source, raw_data):
         #self.logger.info("<-%-10s: %s", source, raw_data)
 
@@ -947,39 +927,118 @@ class MarketMaker:
         rc = 0
         if (source == 'tickspread'):
             rc = self.tickspread_callback(data)
+        elif (source == 'ftx'):
+            rc = self.ftx_callback(data)
+        elif (source == 'binance-s'):
+            rc = self.binance_s_callback(data)
+        elif (source == 'pyth'):
+            rc = self.pyth_xau_callback(data)
         return rc
 
 
 async def main():
-    api = TickSpreadAPI(id_multiple=1000, env=env)
-    # mmaker = MarketMaker(api, tick_jump=Decimal("0.2"), orders_per_side=10,
-    #                  order_size=Decimal("1.5"), max_position=Decimal("40.0"))
-    
-    mmaker = MarketMaker(api, tick_jump=args.tick_jump, orders_per_side=10,
-                        order_size=10.0, max_position=args.max_position,
-                        max_price=args.max_price, amount_precision=args.amount_precision, liquidity=args.liquidity)
-    
-    print("REGISTER")
-    api.register('maker%s@tickspread.com' % id, tickspread_password)
-    time.sleep(0.3)
-    print("LOGIN")
-    # CHANGE ID MULTIPLE to 100 above when moving back to maker@tickspread.com
-    login_status = api.login('maker%s@tickspread.com' %
-                            id, tickspread_password)
-    
-    if (not login_status):
-        asyncio.get_event_loop().stop()
-        print("Login Failure")
-        return 1
-    print("STARTING")
+    if dex == True:
+        # api = TickSpreadDex(id_multiple=1000, env=env)
+        # mmaker = MarketMaker(api, tick_jump=0.5, orders_per_side=50,
+        #                  order_size=0.01, max_position=4000)
+        pass
+    else:
+        api = TickSpreadAPI(id_multiple=1000, env=env)
+        # mmaker = MarketMaker(api, tick_jump=Decimal("0.2"), orders_per_side=10,
+        #                  order_size=Decimal("1.5"), max_position=Decimal("40.0"))
 
-    await api.connect()
-    await api.subscribe("market_data", {"symbol": args.market})
-    await api.subscribe("user_data", {"symbol": args.market})
-    api.on_message(mmaker.callback)
-    
-    # These variables are not referred to anywhere, but an object is being created
-    # We're passing the mmaker callbacks
+        # if args.market == "XAU-TEST":
+        #     mmaker = MarketMaker(api, tick_jump=Decimal("0.01"), orders_per_side=10,
+        #                     order_size=Decimal("0.20"), max_position=Decimal("50.0"))
+            
+        # if args.market == "XAU":
+        #     mmaker = MarketMaker(api, tick_jump=Decimal("0.01"), orders_per_side=50,
+        #                     order_size=Decimal("0.05"), max_position=Decimal("5.0"))
+
+        if args.market == "ETH":
+            mmaker = MarketMaker(api, tick_jump=Decimal("0.2"), orders_per_side=20,
+                            order_size=Decimal("1.0"), max_position=Decimal("200.0"))
+
+        if args.market == "SOL":
+            mmaker = MarketMaker(api, tick_jump=Decimal("0.02"), orders_per_side=20,
+                            order_size=Decimal("15.0"), max_position=Decimal("500.0"))
+
+        if args.market == "BNB":
+            mmaker = MarketMaker(api, tick_jump=Decimal("0.1"), orders_per_side=20,
+                            order_size=Decimal("0.01"), max_position=Decimal("5.0"))
+            
+        # if args.market == "ETH-TEST":
+        #     # mmaker = MarketMaker(api, tick_jump=Decimal("0.2"), orders_per_side8,
+        #     #                 order_size=Decimal("1.5"), max_position=Decimal("40.0"))
+        #     mmaker = MarketMaker(api, tick_jump=Decimal("0.2"), orders_per_side=10,
+        #                     order_size=Decimal("0.001"), max_position=Decimal("1.0"))
+            # mmaker = MarketMaker(api, tick_jump=Decimal("0.2"), orders_per_side=10,
+            #                 order_size=Decimal("0.2"), max_position=Decimal("1.0"))
+        
+        # if args.market == "SOL-TEST":
+        #     mmaker = MarketMaker(api, tick_jump=Decimal("0.01"), orders_per_side=0,
+        #                     order_size=Decimal("0.020"), max_position=Decimal("20.0"))
+
+        # if args.market == "BTC-TEST" or args.market == "BTC-PERP":
+        #     mmaker = MarketMaker(api, tick_jump=Decimal("1.0"), orders_per_side=10,
+        #                     order_size=Decimal("0.01"), max_position=Decimal("4.0"))
+
+        if args.market == "BTC" or args.market == "BTC-PERP":
+            mmaker = MarketMaker(api, tick_jump=Decimal("2.0"), orders_per_side=20,
+                            order_size=Decimal("0.02"), max_position=Decimal("6.0"))
+        print("REGISTER")
+        api.register('maker%s@tickspread.com' % id, tickspread_password)
+        time.sleep(0.3)
+        print("LOGIN")
+        # CHANGE ID MULTIPLE to 100 above when moving back to maker@tickspread.com
+        login_status = api.login('maker%s@tickspread.com' %
+                                id, tickspread_password)
+        if (not login_status):
+            asyncio.get_event_loop().stop()
+            print("Login Failure")
+            return 1
+        print("STARTING")
+
+        #bybit_api = ByBitAPI()
+
+        #bitmex_api = BitMEXAPI()
+        #huobi_api = HuobiAPI()
+
+        await api.connect()
+        await api.subscribe("market_data", {"symbol": args.market})
+        await api.subscribe("user_data", {"symbol": args.market})
+        api.on_message(mmaker.callback)
+        
+        # These variables are not referred to anywhere, but an object is being created
+        # We're passing the mmaker callbacks
+        
+        if args.external_market == 'XAU':
+            external_api = PythXauAPI()
+            external_api.subscribe_index_price(args.external_market)
+            external_api.on_message(mmaker.callback)
+        else:
+            binance_api = BinanceAPI()
+            binance_api.subscribe_futures(args.external_market)
+            binance_api.on_message(mmaker.callback)
+
+    # await bybit_api.connect()
+    # await bybit_api.subscribe()
+    # bybit_api.on_message(mmaker.callback)
+
+    # if dex == True:
+    #     binance_api.subscribe_futures('ETHUSDT')
+    # else:
+
+    # binance_api = BinanceAPI(
+    #     os.getenv('BINANCE_KEY'),
+    #     os.getenv('BINANCE_SECRET'))
+
+    # await bitmex_api.connect()
+    # bitmex_api.on_message(mmaker.callback)
+
+    # await huobi_api.connect()
+    # await huobi_api.subscribe()
+    # huobi_api.on_message(mmaker.callback)
     print("FINISH INIT")
 
 
