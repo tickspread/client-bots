@@ -67,7 +67,7 @@ log_file = args.log
 dex = True if args.dex == "true" else False
 tickspread_password = args.tickspread_password
 
-logging.basicConfig(level=logging.WARN,
+logging.basicConfig(level=logging.INFO,
                     format='%(asctime)s %(levelname)-8s %(message)s')
 if log_file != "shell":
     # log_handler = logging.handlers.WatchedFileHandler(
@@ -311,7 +311,7 @@ class MarketMakerSide:
 class MarketMaker:
     def __init__(self, api, *, logger=logging.getLogger(),
                  name="bot_example", version="0.0",
-                 orders_per_side=8, max_position=400, tick_jump=10, order_size=0.5, leverage=10):
+                 orders_per_side=8, max_position=400, tick_jump=10, order_size=0.5, leverage=10, max_diff = 0.004):
         # System
         self.api = api
         self.logger = logger
@@ -364,6 +364,7 @@ class MarketMaker:
         self.symbol = args.market
         self.money = args.money_asset
         self.max_position = max_position
+        self.max_diff = max_diff
 
         # State
         self.real = True
@@ -899,7 +900,7 @@ class MarketMaker:
 
             #self.logger.info("active = %s" % str(self.active))
             if (self.active):
-                factor = Decimal(1) - Decimal(0.001) * self.position / self.max_position
+                factor = Decimal(1) - Decimal(self.max_diff) * self.position / self.max_position
                 self.fair_price = new_price * Decimal(factor)
                 self.spread = Decimal(0.00010)
                 self.update_orders()
@@ -947,46 +948,56 @@ async def main():
         # mmaker = MarketMaker(api, tick_jump=Decimal("0.2"), orders_per_side=10,
         #                  order_size=Decimal("1.5"), max_position=Decimal("40.0"))
 
-        if args.market == "XAU-TEST":
-            mmaker = MarketMaker(api, tick_jump=Decimal("0.01"), orders_per_side=10,
-                            order_size=Decimal("0.20"), max_position=Decimal("50.0"))
+        # if args.market == "XAU-TEST":
+        #     mmaker = MarketMaker(api, tick_jump=Decimal("0.01"), orders_per_side=10,
+        #                     order_size=Decimal("0.20"), max_position=Decimal("50.0"))
             
-        if args.market == "XAU":
-            mmaker = MarketMaker(api, tick_jump=Decimal("0.01"), orders_per_side=50,
-                            order_size=Decimal("0.05"), max_position=Decimal("5.0"))
+        # if args.market == "XAU":
+        #     mmaker = MarketMaker(api, tick_jump=Decimal("0.01"), orders_per_side=50,
+        #                     order_size=Decimal("0.05"), max_position=Decimal("5.0"))
 
         if args.market == "ETH":
-            mmaker = MarketMaker(api, tick_jump=Decimal("0.1"), orders_per_side=10,
-                            order_size=Decimal("2.0"), max_position=Decimal("50.0"))
+            mmaker = MarketMaker(api, tick_jump=Decimal("0.5"), orders_per_side=35,
+                            order_size=Decimal("0.5"), max_position=Decimal("200.0"))
 
         if args.market == "SOL":
-            mmaker = MarketMaker(api, tick_jump=Decimal("0.01"), orders_per_side=10,
-                            order_size=Decimal("20.0"), max_position=Decimal("500.0"))
+            mmaker = MarketMaker(api, tick_jump=Decimal("0.05"), orders_per_side=35,
+                            order_size=Decimal("10.0"), max_position=Decimal("500.0"))
 
-        if args.market == "ETH-TEST":
-            # mmaker = MarketMaker(api, tick_jump=Decimal("0.2"), orders_per_side8,
-            #                 order_size=Decimal("1.5"), max_position=Decimal("40.0"))
-            mmaker = MarketMaker(api, tick_jump=Decimal("0.2"), orders_per_side=10,
-                            order_size=Decimal("0.001"), max_position=Decimal("1.0"))
+        if args.market == "BNB":
+            mmaker = MarketMaker(api, tick_jump=Decimal("0.2"), orders_per_side=20,
+                            order_size=Decimal("4.0"), max_position=Decimal("150.0"))
+            
+        # if args.market == "ETH-TEST":
+        #     # mmaker = MarketMaker(api, tick_jump=Decimal("0.2"), orders_per_side8,
+        #     #                 order_size=Decimal("1.5"), max_position=Decimal("40.0"))
+        #     mmaker = MarketMaker(api, tick_jump=Decimal("0.2"), orders_per_side=10,
+        #                     order_size=Decimal("0.001"), max_position=Decimal("1.0"))
             # mmaker = MarketMaker(api, tick_jump=Decimal("0.2"), orders_per_side=10,
             #                 order_size=Decimal("0.2"), max_position=Decimal("1.0"))
         
-        if args.market == "SOL-TEST":
-            mmaker = MarketMaker(api, tick_jump=Decimal("0.01"), orders_per_side=0,
-                            order_size=Decimal("0.020"), max_position=Decimal("20.0"))
+        # if args.market == "SOL-TEST":
+        #     mmaker = MarketMaker(api, tick_jump=Decimal("0.01"), orders_per_side=0,
+        #                     order_size=Decimal("0.020"), max_position=Decimal("20.0"))
 
-        if args.market == "BTC-TEST" or args.market == "BTC-PERP":
-            mmaker = MarketMaker(api, tick_jump=Decimal("1.0"), orders_per_side=10,
-                            order_size=Decimal("0.01"), max_position=Decimal("4.0"))
+        # if args.market == "BTC-TEST" or args.market == "BTC-PERP":
+        #     mmaker = MarketMaker(api, tick_jump=Decimal("1.0"), orders_per_side=10,
+        #                     order_size=Decimal("0.01"), max_position=Decimal("4.0"))
 
         if args.market == "BTC" or args.market == "BTC-PERP":
-            mmaker = MarketMaker(api, tick_jump=Decimal("1.0"), orders_per_side=10,
-                            order_size=Decimal("0.08"), max_position=Decimal("6.0"))
+            mmaker = MarketMaker(api, tick_jump=Decimal("2.0"), orders_per_side=50,
+                            order_size=Decimal("0.01"), max_position=Decimal("18.0"))
+
+        
+
+        if args.market == "BTC|y000" or args.market == "BTC|n000":
+            mmaker = MarketMaker(api, tick_jump=Decimal("100.0"), orders_per_side=40,
+                            order_size=Decimal("0.0003"), max_position=Decimal("0.2"), max_diff=0.6, leverage=2)
         print("REGISTER")
         api.register('maker%s@tickspread.com' % id, tickspread_password)
         time.sleep(0.3)
         print("LOGIN")
-        # CHANGE ID MULTIPLE to 100 above when moving back to maker@tickspread.com
+        # CHANGE ID MULTIPLE to 100 above when moving back to maker@tickspread.com 
         login_status = api.login('maker%s@tickspread.com' %
                                 id, tickspread_password)
         if (not login_status):
