@@ -1,4 +1,3 @@
-
 # -*- coding: utf-8 -*-
 """Example TickSpread Bot
 
@@ -91,7 +90,6 @@ def str_to_side(side):
     else:
         return 0
 
-
 def side_to_str(side):
     if (side == Side.BID):
         return "bid"
@@ -167,15 +165,15 @@ class Order:
 
 class MarketMakerSide:
     def __init__(self, parent, *, side, target_num_orders, max_orders,
-                 order_size, available_limit, tick_jump):
+                 min_order_size, available_limit, tick_jump):
         self.parent = parent
         self.side = side
         self.target_num_orders = target_num_orders
         self.max_orders = max_orders
-        self.order_size = order_size
+        self.min_order_size = min_order_size
         self.available_limit = available_limit
         self.tick_jump = tick_jump
-
+        
         self.last_status_time = 0.0
 
         self.top_order = 0
@@ -216,7 +214,7 @@ class MarketMakerSide:
         #self.parent.logger.debug("maybe_cancel_top_orders: %d" % self.top_price)
         if (self.top_order > self.old_top_order):
             orders_to_remove = min(self.top_order - self.old_top_order,
-                                   self.target_num_orders)
+                                   self.max_orders)
             for i in range(orders_to_remove):
                 index = (self.old_top_order + i) % (self.max_orders)
                 order = self.orders[index]
@@ -224,7 +222,7 @@ class MarketMakerSide:
                         and order.cancel == CancelState.NORMAL):
                     self.parent.send_cancel(order)
 
-    def recalculate_top_orders(self):
+    def recalculate_all_orders(self):
         current_time = time.time()
         self.parent.logger.info("recalculate_top_orders: %d, top = (%d => %d) %s %d [time = %f/%f, available = %.2f]", self.top_price,
                                 self.old_top_order, self.top_order, side_to_str(self.side), self.available_limit, current_time, self.last_status_time+1.0, self.available_limit)
@@ -239,79 +237,54 @@ class MarketMakerSide:
         else:
             price_increment = +self.tick_jump
         price = initial_price
-        for i in range(self.target_num_orders):
+        
+        order_counter = 0
+        liquidity_counter = Decimal(0)
+        liquidity_pending_cancel = Decimal(0)
+        expected_liquidity = Decimal(0)
+
+        for i in range(self.max_orders):
             '''
             self.parent.logger.info("index = %d (%d)",
                                     self.top_order + i,
                                     (self.top_order + i) % self.max_orders)
             '''
-            if (self.top_order + i >=
-                    self.old_top_order + self.target_num_orders):
-                #self.parent.logger.info("breaking at %d", self.top_order + i)
-                # Send new orders at the bottom later
-                break
+
             index = (self.top_order + i) % (self.max_orders)
             order = self.orders[index]
-            if (order.state == OrderState.EMPTY):
-                size = min(self.order_size, self.available_limit)
-                self.parent.logger.info(
-                    "Found empty order %d, will send NEW with size %d", index, size)
-                if (size > 0):
-                    self.parent.send_new(order, size, price)
-            if (order.state != OrderState.EMPTY
-                    and order.cancel == CancelState.NORMAL):
-                if (price != order.price):
+            
+            liquidity_delta_high = expected_liquidity - liquidity_counter
+            liquidity_delta_low = expected_liquidity * self.liquidity_curve_hysteresis
+
+            if (order.state != OrderState.EMPTY and order.cancel == CancelState.NORMAL):
+                if (order.price != price
+                or order.amount_left > liquidity_delta_high
+                or order_counter >= self.target_num_orders):
                     self.parent.send_cancel(order)
-            price += price_increment
-
-    def recalculate_bottom_orders(self):
-        self.parent.logger.info("recalculate_bottom_orders: %d",
-                                self.top_price)
-        if (self.top_order > self.old_top_order):
-            initial_price = self.top_price
-            if (self.side == Side.BID):
-                price_increment = -self.tick_jump
-            else:
-                price_increment = +self.tick_jump
-
-            price = initial_price + self.target_num_orders * price_increment
-            for i in range(
-                    min(self.top_order - self.old_top_order,
-                        self.target_num_orders)):
-                index = (self.old_top_order + self.target_num_orders +
-                         i) % (self.max_orders)
-                order = self.orders[index]
-
-                if (order.state == OrderState.EMPTY):
-                    size = min(self.order_size, self.available_limit)
+            
+            if (order.state == OrderState.EMPTY):
+                if (liquidity_delta_low > self.min_order_size):
+                    size = min(liquidity_delta, self.available_limit)
+                    self.parent.logger.info("Found empty order %d, will send NEW with size %d", index, size)
                     if (size > 0):
                         self.parent.send_new(order, size, price)
-
-                if (order.state != OrderState.EMPTY
-                        and order.cancel == CancelState.NORMAL):
-                    if (price != order.price):
-                        self.parent.send_cancel(order)
-
-                price += price_increment
-
-    def maybe_cancel_bottom_orders(self):
-        self.parent.logger.info("maybe_cancel_bottom_orders: %d",
-                                self.top_price)
-        # self.debug_orders()
-
-        for i in range(self.target_num_orders, self.max_orders):
-            index = (self.top_order + i) % (self.max_orders)
-            order = self.orders[index]
-
-            if (order.state != OrderState.EMPTY
-                    and order.cancel == CancelState.NORMAL):
-                self.parent.send_cancel(order)
+                    liquidity_counter += size
+            else:
+                liquidity_counter += order.amount_left
+                if (order.cancel == CancelState.PENDING):
+                    liquidity_pending_cancel += order.amount_left
+            
+            if (order.state != OrderState.EMPTY):
+                order_count += 1
+            
+            price += price_increment
+            expected_liquidity += self.avg_tick_liquidity
 
 
 class MarketMaker:
     def __init__(self, api, *, logger=logging.getLogger(),
                  name="bot_example", version="0.0",
-                 orders_per_side=8, max_position=400, tick_jump=10, order_size=0.5, leverage=10, max_diff = 0.004):
+                 orders_per_side=8, max_position=400, tick_jump=10, min_order_size=0.5, leverage=10, max_diff = 0.004):
         # System
         self.api = api
         self.logger = logger
@@ -321,10 +294,10 @@ class MarketMaker:
         # Structure
         self.bids = MarketMakerSide(self, side=Side.BID,
                                     target_num_orders=orders_per_side, max_orders=2*orders_per_side,
-                                    order_size=order_size, available_limit=max_position, tick_jump=tick_jump)
+                                    min_order_size=min_order_size, available_limit=max_position, tick_jump=tick_jump)
         self.asks = MarketMakerSide(self, side=Side.ASK,
                                     target_num_orders=orders_per_side, max_orders=2*orders_per_side,
-                                    order_size=order_size, available_limit=max_position, tick_jump=tick_jump)
+                                    min_order_size=min_order_size, available_limit=max_position, tick_jump=tick_jump)
 
         # Market State
         self.last_auction_id = 0
@@ -359,17 +332,22 @@ class MarketMaker:
 
         # Parameters
         self.tick_jump = tick_jump
-        self.order_size = order_size
+        self.min_order_size = min_order_size
         self.leverage = leverage
         self.symbol = args.market
         self.money = args.money_asset
         self.max_position = max_position
         self.max_diff = max_diff
+        
+        # Hardcoded parameters -- the lower the higher the hysteresis
+        self.liquidity_curve_hysteresis = 0.9
 
         # State
         self.real = True
         self.active = False
         self.fair_price = None
+        self.kyle_impact = None
+        self.avg_tick_liquidity = None
         self.spread = None
 
     def log_new(self, side, amount, price, clordid):
@@ -615,16 +593,8 @@ class MarketMaker:
         self.asks.maybe_cancel_top_orders()
 
         # When price falls, send new top asks. When price rises, send new top bids.
-        self.bids.recalculate_top_orders()
-        self.asks.recalculate_top_orders()
-
-        # When price falls, send new bottom bids to maintain the desired number of orders. When price rises, send new bottom asks
-        self.bids.recalculate_bottom_orders()
-        self.asks.recalculate_bottom_orders()
-
-        # When price falls, cancel bottom asks to maintain the desired number of orders. When price rises, cancel bottom bids.
-        self.bids.maybe_cancel_bottom_orders()
-        self.asks.maybe_cancel_bottom_orders()
+        self.bids.recalculate_all_orders()
+        self.asks.recalculate_all_orders()
     
     def tickspread_market_data_partial(self, payload):
         print("MARKET DATA PARTIAL: ", payload)
@@ -902,6 +872,8 @@ class MarketMaker:
             if (self.active):
                 factor = Decimal(1) - Decimal(self.max_diff) * self.position / self.max_position
                 self.fair_price = new_price * Decimal(factor)
+                self.kyle_impact = new * self.max_diff / self.max_position	# Price Impact (per position unit)
+                self.avg_tick_liquidity = self.tick_jump / self.kyle_impact     # On average how much liquidity we want per tick (based on tick jump)
                 self.spread = Decimal(0.00010)
                 self.update_orders()
 
@@ -941,58 +913,56 @@ async def main():
     if dex == True:
         # api = TickSpreadDex(id_multiple=1000, env=env)
         # mmaker = MarketMaker(api, tick_jump=0.5, orders_per_side=50,
-        #                  order_size=0.01, max_position=4000)
+        #                  min_order_size=0.01, max_position=4000)
         pass
     else:
         api = TickSpreadAPI(id_multiple=1000, env=env)
         # mmaker = MarketMaker(api, tick_jump=Decimal("0.2"), orders_per_side=10,
-        #                  order_size=Decimal("1.5"), max_position=Decimal("40.0"))
+        #                  min_order_size=Decimal("1.5"), max_position=Decimal("40.0"))
 
         # if args.market == "XAU-TEST":
         #     mmaker = MarketMaker(api, tick_jump=Decimal("0.01"), orders_per_side=10,
-        #                     order_size=Decimal("0.20"), max_position=Decimal("50.0"))
+        #                     min_order_size=Decimal("0.20"), max_position=Decimal("50.0"))
             
         # if args.market == "XAU":
         #     mmaker = MarketMaker(api, tick_jump=Decimal("0.01"), orders_per_side=50,
-        #                     order_size=Decimal("0.05"), max_position=Decimal("5.0"))
+        #                     min_order_size=Decimal("0.05"), max_position=Decimal("5.0"))
 
         if args.market == "ETH":
             mmaker = MarketMaker(api, tick_jump=Decimal("0.5"), orders_per_side=35,
-                            order_size=Decimal("0.5"), max_position=Decimal("200.0"))
+                            min_order_size=Decimal("0.5"), max_position=Decimal("200.0"))
 
         if args.market == "SOL":
             mmaker = MarketMaker(api, tick_jump=Decimal("0.05"), orders_per_side=35,
-                            order_size=Decimal("10.0"), max_position=Decimal("500.0"))
+                            min_order_size=Decimal("10.0"), max_position=Decimal("500.0"))
 
         if args.market == "BNB":
             mmaker = MarketMaker(api, tick_jump=Decimal("0.2"), orders_per_side=20,
-                            order_size=Decimal("4.0"), max_position=Decimal("150.0"))
+                            min_order_size=Decimal("4.0"), max_position=Decimal("150.0"))
             
         # if args.market == "ETH-TEST":
         #     # mmaker = MarketMaker(api, tick_jump=Decimal("0.2"), orders_per_side8,
-        #     #                 order_size=Decimal("1.5"), max_position=Decimal("40.0"))
+        #     #                 min_order_size=Decimal("1.5"), max_position=Decimal("40.0"))
         #     mmaker = MarketMaker(api, tick_jump=Decimal("0.2"), orders_per_side=10,
-        #                     order_size=Decimal("0.001"), max_position=Decimal("1.0"))
+        #                     min_order_size=Decimal("0.001"), max_position=Decimal("1.0"))
             # mmaker = MarketMaker(api, tick_jump=Decimal("0.2"), orders_per_side=10,
-            #                 order_size=Decimal("0.2"), max_position=Decimal("1.0"))
+            #                 min_order_size=Decimal("0.2"), max_position=Decimal("1.0"))
         
         # if args.market == "SOL-TEST":
         #     mmaker = MarketMaker(api, tick_jump=Decimal("0.01"), orders_per_side=0,
-        #                     order_size=Decimal("0.020"), max_position=Decimal("20.0"))
+        #                     min_order_size=Decimal("0.020"), max_position=Decimal("20.0"))
 
         # if args.market == "BTC-TEST" or args.market == "BTC-PERP":
         #     mmaker = MarketMaker(api, tick_jump=Decimal("1.0"), orders_per_side=10,
-        #                     order_size=Decimal("0.01"), max_position=Decimal("4.0"))
+        #                     min_order_size=Decimal("0.01"), max_position=Decimal("4.0"))
 
         if args.market == "BTC" or args.market == "BTC-PERP":
             mmaker = MarketMaker(api, tick_jump=Decimal("2.0"), orders_per_side=50,
-                            order_size=Decimal("0.01"), max_position=Decimal("18.0"))
-
-        
+                            min_order_size=Decimal("0.01"), max_position=Decimal("18.0"))       
 
         if args.market == "BTC|y000" or args.market == "BTC|n000":
             mmaker = MarketMaker(api, tick_jump=Decimal("100.0"), orders_per_side=40,
-                            order_size=Decimal("0.0003"), max_position=Decimal("0.2"), max_diff=0.6, leverage=2)
+                            min_order_size=Decimal("0.0003"), max_position=Decimal("0.2"), max_diff=0.6, leverage=2)
         print("REGISTER")
         api.register('maker%s@tickspread.com' % id, tickspread_password)
         time.sleep(0.3)
