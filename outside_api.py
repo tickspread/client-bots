@@ -250,20 +250,19 @@ def test_callback(source, raw_data):
 
 
 async def main():
-    pass
     # bybit_api = ByBitAPI()
-    # binance_api = BinanceAPI()
+    binance_api = BinanceAPI()
     # bitmex_api = BitMEXAPI()
     # huobi_api = HuobiAPI()
 
-    # logging.basicConfig(level=logging.INFO, filename="dump.log")
+    logging.basicConfig(level=logging.INFO, filename="dump.log")
 
     # await bybit_api.connect()
     # await bybit_api.subscribe()
     # bybit_api.on_message(test_callback)
 
-    # binance_api.subscribe_futures('ETHUSDT')
-    # binance_api.on_message(test_callback)
+    binance_api.subscribe_futures('ETHUSDT')
+    binance_api.on_message(test_callback)
     # binance_api.stop()
 
     # await bitmex_api.connect()
