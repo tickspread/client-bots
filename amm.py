@@ -54,7 +54,7 @@ parser.add_argument('--neutral_price', dest='neutral_price', required=True)
 parser.add_argument('--max_position', dest='max_position', required=True)
 parser.add_argument('--tick_jump', dest='tick_jump', required=True)
 parser.add_argument('--max_price', dest='max_price', required=True)
-parser.add_argument('--minimum_size', dest='minimum_size', required=True)
+parser.add_argument('--amount_precision', dest='amount_precision', required=True)
 
 
 args = parser.parse_args()
@@ -198,7 +198,10 @@ class MarketMakerSide:
             p_1 = float(price)/float(self.parent.max_price)
 
         size = (f(p_1)-f(p_0)) * float(self.parent.liquidity)
-        size = Decimal(size).quantize(self.parent.minimum_size, rounding=ROUND_DOWN)
+                
+        digits = self.parent.amount_precision
+        size = round(size - 0.5/10**digits, digits)
+        size = Decimal(size)
         
         if (size > self.max_order_size):
             size = self.max_order_size
@@ -277,8 +280,9 @@ class MarketMakerSide:
             if (order.state == OrderState.EMPTY):
                 order_size = self.order_size(price)
                 size = min(order_size, self.available_limit)
+                
                 self.parent.logger.info(
-                    "Found empty order %d, will send NEW with size %d", index, size)
+                    "Found empty order %d, will send NEW with size %f", index, size)
                 if (size > 0):
                     self.parent.send_new(order, size, price)
             if (order.state != OrderState.EMPTY
@@ -335,8 +339,8 @@ class MarketMakerSide:
 class MarketMaker:
     def __init__(self, api, *, logger=logging.getLogger(),
                  name="bot_example", version="0.0",
-                 orders_per_side=8, max_position=400, tick_jump=10, order_size=0.5, leverage=10,
-                 max_price=100000, minimum_size=0.001, liquidity=100.0):
+                 orders_per_side=8, max_position=400, tick_jump=10, order_size=0.5, leverage=1,
+                 max_price=100000, amount_precision=3, liquidity=100.0):
         # System
         self.api = api
         self.logger = logger
@@ -386,7 +390,7 @@ class MarketMaker:
         self.money = args.money_asset
         self.max_position = Decimal(max_position)
         self.neutral_price = Decimal(args.neutral_price)
-        self.minimum_size = Decimal(minimum_size)
+        self.amount_precision = int(amount_precision) # Integer
         self.liquidity = Decimal(liquidity)
 
         # State
@@ -784,8 +788,13 @@ class MarketMaker:
         if (not found_symbol_position):
             logging.warning(
                 "Could not find %s position in partial" % self.symbol)
-            return
+            response = input("WARNING: Set position to zero? (y|n): ")
+            if (response == "y"):
+                self.position = 0
+            else:
+                return
         self.has_user_position = True
+
         print("Read user_data partial successfully")
         
         #input("Press key to continue")
@@ -946,9 +955,9 @@ async def main():
     # mmaker = MarketMaker(api, tick_jump=Decimal("0.2"), orders_per_side=10,
     #                  order_size=Decimal("1.5"), max_position=Decimal("40.0"))
     
-    mmaker = MarketMaker(api, tick_jump=args.tick_jump, orders_per_side=20,
+    mmaker = MarketMaker(api, tick_jump=args.tick_jump, orders_per_side=10,
                         order_size=10.0, max_position=args.max_position,
-                        max_price=args.max_price, minimum_size=args.minimum_size, liquidity=args.liquidity)
+                        max_price=args.max_price, amount_precision=args.amount_precision, liquidity=args.liquidity)
     
     print("REGISTER")
     api.register('maker%s@tickspread.com' % id, tickspread_password)
