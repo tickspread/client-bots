@@ -212,90 +212,111 @@ class MarketMakerSide:
             "%s - top: %d => %d" %
             (side_to_str(self.side), self.old_top_order, self.top_order))
 
-    def recalculate_all_orders(self):
-        current_time = time.time()
-        self.parent.logger.info("recalculate_top_orders: %d, top = (%d => %d) %s %d [time = %f/%f, available = %.2f]", self.top_price,
-                                self.old_top_order, self.top_order, side_to_str(self.side), self.available_limit, current_time, self.last_status_time+1.0, self.available_limit)
+def recalculate_all_orders(self):
+    current_time = time.time()
+    self.parent.logger.info(
+        "recalculate_top_orders: %d, top = (%d => %d) %s %d [time = %f/%f, available = %.2f]",
+        self.top_price,
+        self.old_top_order,
+        self.top_order,
+        side_to_str(self.side),
+        self.available_limit,
+        current_time,
+        self.last_status_time + 1.0,
+        self.available_limit
+    )
 
-        if (current_time - self.last_status_time > 1.0):
-            self.debug_orders()
-            self.last_status_time = current_time
+    if (current_time - self.last_status_time > 1.0):
+        self.debug_orders()
+        self.last_status_time = current_time
 
-        if (self.side == Side.BID):
-            price_increment = -self.tick_jump
-        else:
-            price_increment = +self.tick_jump
-        price = self.top_price
-        
-        order_counter = 0
-        liquidity_counter = Decimal(0)
-        liquidity_pending_cancel = Decimal(0)
-        
-        for i in range(self.max_orders):
-            '''
-            self.parent.logger.info("index = %d (%d)",
-                                    self.top_order + i,
-                                    (self.top_order + i) % self.max_orders)
-            '''
+    # Determine price increment direction based on side
+    price_increment = self.tick_jump if self.side == Side.ASK else -self.tick_jump
+    price = self.top_price
 
-            index = (self.top_order + i) % (self.max_orders)
-            order = self.orders[index]
+    # Initialize counters
+    active_order_count = 0
+    total_liquidity = Decimal(0)
+    pending_cancel_liquidity = Decimal(0)
 
-            delta_ticks = 0
+    # Loop through the order slots in the circular buffer
+    for i in range(self.max_orders):
+        index = (self.top_order + i) % self.max_orders
+        order = self.orders[index]
 
+        # Calculate delta_ticks: distance from fair price in ticks
+        delta_ticks = (price - self.parent.fair_price) / price_increment
+        delta_ticks = delta_ticks.quantize(Decimal("0.001"), rounding=ROUND_DOWN)
 
-            # For each iteration of this loop, we'll consider whether to place an order at "price"
-            # For BID orders, price should be lower than fair_price
-            # For ASK orders, price should be higher than fair_price
-            # In both cases delta_ticks will be positive, due to the sign of the price increment
-            delta_ticks = (price - self.parent.fair_price) / price_increment
-            delta_ticks = delta_ticks.quantize(Decimal("0.001"), rounding=ROUND_DOWN)
-    
-            # Calculate expected liquidity for the current price level
-            expected_liquidity = self.parent.avg_tick_liquidity * delta_ticks
-            expected_liquidity = min(expected_liquidity, self.parent.max_liquidity)
+        # Ensure delta_ticks is non-negative
+        if delta_ticks < 0:
+            delta_ticks = Decimal('0.000')
 
-            assert(liquidity_counter >= liquidity_pending_cancel)
-            liquidity_delta_high = expected_liquidity - (liquidity_counter - liquidity_pending_cancel)
-            liquidity_delta_low = expected_liquidity * self.parent.liquidity_curve_hysteresis_low - liquidity_counter
-            liquidity_delta_minimum = expected_liquidity * self.parent.liquidity_curve_hysteresis_minimum - liquidity_counter - self.parent.avg_tick_liquidity
+        # Calculate expected cumulative liquidity for the current price level
+        expected_liquidity = self.parent.avg_tick_liquidity * delta_ticks
+        expected_liquidity = min(expected_liquidity, self.parent.max_liquidity)
 
-            self.parent.logger.trace(f"Price: {price}, Fair Price: {self.parent.fair_price}, Delta Ticks: {delta_ticks}")
-            self.parent.logger.trace(f"Expected Liquidity: {expected_liquidity}, Liquidity Delta High: {liquidity_delta_high}, Liquidity Delta Low: {liquidity_delta_low}, Liquidity Delta Minimum: {liquidity_delta_minimum}")
+        # Calculate liquidity deltas based on the liquidity curves
+        liquidity_excess = expected_liquidity - (total_liquidity - pending_cancel_liquidity)
+        liquidity_needed = expected_liquidity * self.parent.liquidity_curve_hysteresis_low - total_liquidity
+        liquidity_min_threshold = (
+            expected_liquidity * self.parent.liquidity_curve_hysteresis_minimum
+            - total_liquidity
+            - self.parent.avg_tick_liquidity
+        )
 
-            if (order.state != OrderState.EMPTY and order.cancel == CancelState.NORMAL):
-                if (order.price != price
-                    or order.amount_left > liquidity_delta_high
-                    or order_counter >= self.target_num_orders):
-                    # Normal cancellation due to wrong price, or too much liquidity, or too many orders
-                    self.parent.send_cancel(order)
-                elif (liquidity_delta_minimum > order.amount_left
-                      and liquidity_pending_cancel == 0):
-                    # Cancellation due to too little liquidity, cancels a single order to be able to send later one
-                    self.parent.send_cancel(order)
-            
-            if (order.state == OrderState.EMPTY and order_counter < self.target_num_orders):
-                if (liquidity_delta_low > self.min_order_size):
-                    size = min(liquidity_delta_low, self.available_limit)
-                    # Round down the size to the precision of min_order_size, but don't force it to be a multiple
-                    rounded_size = self.round_down_to_precision(size, self.min_order_size)
-                    self.parent.logger.info("Found empty order %d, will send NEW with size %d", index, size)
-                    if (rounded_size >= self.min_order_size):
-                        self.parent.send_new(order, rounded_size, price)
-            
-            if (order.state != OrderState.EMPTY):
-                order_counter += 1
-                liquidity_counter += Decimal(str(order.amount_left))
-                if (order.cancel == CancelState.PENDING):
-                    liquidity_pending_cancel += Decimal(str(order.amount_left))
-            
-            if liquidity_counter + self.min_order_size >= self.parent.max_liquidity:
-                break
-            
-            if (order_counter >= self.target_num_orders):
-                break
-            
-            price += price_increment
+        # Logging for debugging purposes (to be adjusted later)
+        self.parent.logger.debug(
+            f"Price: {price}, Fair Price: {self.parent.fair_price}, Delta Ticks: {delta_ticks}"
+        )
+        self.parent.logger.debug(
+            f"Expected Liquidity: {expected_liquidity}, "
+            f"Liquidity Excess: {liquidity_excess}, "
+            f"Liquidity Needed: {liquidity_needed}, "
+            f"Liquidity Min Threshold: {liquidity_min_threshold}"
+        )
+
+        # Decide whether to cancel or keep existing orders
+        if order.state != OrderState.EMPTY and order.cancel == CancelState.NORMAL:
+            if (
+                order.price != price
+                or order.amount_left > liquidity_excess
+                or active_order_count >= self.target_num_orders
+            ):
+                # Cancel order due to incorrect price, excess liquidity, or too many orders
+                self.parent.send_cancel(order)
+            elif liquidity_min_threshold > order.amount_left and pending_cancel_liquidity == 0:
+                # Cancel order to replace it with a larger one due to insufficient liquidity
+                self.parent.send_cancel(order)
+
+        # Place new orders if necessary
+        if order.state == OrderState.EMPTY and active_order_count < self.target_num_orders:
+            if liquidity_needed > self.min_order_size:
+                size = min(liquidity_needed, self.available_limit)
+                # Round down the size to the precision of min_order_size
+                rounded_size = self.round_down_to_precision(size, self.min_order_size)
+                self.parent.logger.info(
+                    "Found empty order %d, will send NEW with size %s", index, rounded_size
+                )
+                if rounded_size >= self.min_order_size:
+                    self.parent.send_new(order, rounded_size, price)
+
+        # Update counters
+        if order.state != OrderState.EMPTY:
+            active_order_count += 1
+            total_liquidity += Decimal(str(order.amount_left))
+            if order.cancel == CancelState.PENDING:
+                pending_cancel_liquidity += Decimal(str(order.amount_left))
+
+        # Check exit conditions
+        if total_liquidity + self.min_order_size >= self.parent.max_liquidity:
+            break
+
+        if active_order_count >= self.target_num_orders:
+            break
+
+        # Move to the next price level
+        price += price_increment
 
 class MarketMaker:
     def __init__(self, api, *, logger=logging.getLogger(),
