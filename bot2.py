@@ -221,15 +221,11 @@ class MarketMakerSide:
             self.debug_orders()
             self.last_status_time = current_time
 
-        initial_price = self.top_price
         if (self.side == Side.BID):
             price_increment = -self.tick_jump
         else:
             price_increment = +self.tick_jump
-        price = initial_price
-        
-        initial_delta_ticks = (initial_price - self.parent.fair_price)/price_increment
-        initial_delta_ticks = initial_delta_ticks.quantize(Decimal("0.001"), rounding=ROUND_DOWN)
+        price = self.top_price
         
         order_counter = 0
         liquidity_counter = Decimal(0)
@@ -246,8 +242,12 @@ class MarketMakerSide:
             order = self.orders[index]
 
             delta_ticks = 0
-            
-            # Calculate delta_ticks for the current price level
+
+
+            # For each iteration of this loop, we'll consider whether to place an order at "price"
+            # For BID orders, price should be lower than fair_price
+            # For ASK orders, price should be higher than fair_price
+            # In both cases delta_ticks will be positive, due to the sign of the price increment
             delta_ticks = (price - self.parent.fair_price) / price_increment
             delta_ticks = delta_ticks.quantize(Decimal("0.001"), rounding=ROUND_DOWN)
     
@@ -259,6 +259,9 @@ class MarketMakerSide:
             liquidity_delta_high = expected_liquidity - (liquidity_counter - liquidity_pending_cancel)
             liquidity_delta_low = expected_liquidity * self.parent.liquidity_curve_hysteresis_low - liquidity_counter
             liquidity_delta_minimum = expected_liquidity * self.parent.liquidity_curve_hysteresis_minimum - liquidity_counter - self.parent.avg_tick_liquidity
+
+            self.parent.logger.trace(f"Price: {price}, Fair Price: {self.parent.fair_price}, Delta Ticks: {delta_ticks}")
+            self.parent.logger.trace(f"Expected Liquidity: {expected_liquidity}, Liquidity Delta High: {liquidity_delta_high}, Liquidity Delta Low: {liquidity_delta_low}, Liquidity Delta Minimum: {liquidity_delta_minimum}")
 
             if (order.state != OrderState.EMPTY and order.cancel == CancelState.NORMAL):
                 if (order.price != price
@@ -293,7 +296,6 @@ class MarketMakerSide:
                 break
             
             price += price_increment
-            expected_liquidity += Decimal(str(self.parent.avg_tick_liquidity))
 
 class MarketMaker:
     def __init__(self, api, *, logger=logging.getLogger(),
