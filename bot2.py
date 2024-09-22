@@ -322,8 +322,8 @@ class MarketMakerSide:
 
     def log_liquidity_metrics(self, price, delta_ticks, expected_liquidity, liquidity_deltas):
         """Logs the calculated liquidity metrics for debugging purposes."""
-        self.parent.logger.trace(f"Price: {price}, Fair Price: {self.parent.fair_price}, Delta Ticks: {delta_ticks}")
-        self.parent.logger.trace(
+        self.parent.logger.debug(f"Price: {price}, Fair Price: {self.parent.fair_price}, Delta Ticks: {delta_ticks}")
+        self.parent.logger.debug(
             f"Expected Liquidity: {expected_liquidity}, "
             f"Liquidity Excess: {liquidity_deltas['excess']}, "
             f"Liquidity Needed: {liquidity_deltas['needed']}, "
