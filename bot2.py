@@ -416,7 +416,7 @@ class MarketMaker:
         self.tick_jump = Decimal(tick_jump)
         self.min_order_size = Decimal(min_order_size)
         self.max_order_size = Decimal(max_order_size)
-        self.leverage = leverage
+        self.leverage = Decimal(leverage)
         self.symbol = market
         self.money = money_asset
         self.max_diff = Decimal(str(max_diff))
@@ -424,7 +424,7 @@ class MarketMaker:
         if (max_liquidity >= 0):
             self.max_liquidity = Decimal(str(max_liquidity))
         else:
-            self.max_liquidity = max_position
+            self.max_liquidity = Decimal(str(max_position))
         
         # Hardcoded parameters -- the lower the higher the hysteresis
         self.liquidity_curve_hysteresis_low = Decimal(0.9)
