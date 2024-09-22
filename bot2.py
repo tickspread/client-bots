@@ -376,8 +376,8 @@ class MarketMaker:
 
         # Parameters
         self.tick_jump = Decimal(tick_jump)
-        self.min_order_size = min_order_size
-        self.max_order_size = max_order_size
+        self.min_order_size = Decimal(min_order_size)
+        self.max_order_size = Decimal(max_order_size)
         self.leverage = leverage
         self.symbol = args.market
         self.money = args.money_asset
