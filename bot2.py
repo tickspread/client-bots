@@ -360,9 +360,10 @@ class MarketMakerSide:
         )
 
 class MarketMaker:
-    def __init__(self, api, *, logger=logging.getLogger(),
+    def __init__(self, api, market, money_asset, *, logger=logging.getLogger(),
                  name="bot_example", version="0.0",
-                 orders_per_side=8, max_position=400, tick_jump=10, min_order_size=0.5, leverage=10, max_diff = 0.004, max_liquidity = -1, max_order_size=10.0):
+                 orders_per_side=8, max_position=400, tick_jump=10, min_order_size=0.5, leverage=10,
+                 max_diff = 0.004, max_liquidity = -1, max_order_size=10.0):
         """
         Initializes the MarketMaker with a circular buffer to manage orders.
 
@@ -416,8 +417,8 @@ class MarketMaker:
         self.min_order_size = Decimal(min_order_size)
         self.max_order_size = Decimal(max_order_size)
         self.leverage = leverage
-        self.symbol = args.market
-        self.money = args.money_asset
+        self.symbol = market
+        self.money = money_asset
         self.max_diff = Decimal(str(max_diff))
         self.max_position = Decimal(str(max_position))
         if (max_liquidity >= 0):
@@ -1212,7 +1213,7 @@ async def main():
     if leverage is not None:
         mmaker_params['leverage'] = leverage
 
-    mmaker = MarketMaker(api, **mmaker_params)
+    mmaker = MarketMaker(api, market, general_config['money_asset'], **mmaker_params)
 
     # Register and login to TickSpread API
     logging.info("LOGIN")
