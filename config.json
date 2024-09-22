@@ -36,9 +36,9 @@
         },
         "BTC": {
             "external_market": "BTCUSDT",
-            "tick_jump": "5.0",
-            "orders_per_side": 30,
-            "min_order_size": "0.01",
+            "tick_jump": "2.0",
+            "orders_per_side": 50,
+            "min_order_size": "0.02",
             "max_position": "2.5"
         },
         "BTC|y000": {
