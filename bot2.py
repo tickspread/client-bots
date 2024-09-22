@@ -98,6 +98,28 @@ def side_to_str(side):
     else:
         return "bug"
 
+"""
+Order Lifecycle:
+    - EMPTY: The slot is available for placing a new order.
+    - PENDING: An order has been sent to the exchange and is awaiting acknowledgment.
+    - ACKED: The exchange has acknowledged the order; it may not yet be visible in the order book.
+    - MAKER: The order is now visible in the order book as a maker order.
+    - ACTIVE: The order is participating in an active auction, and may execute with price improvement
+
+State Transitions (normal)
+    EMPTY -> PENDING: When a new order is sent to the exchange.
+    PENDING -> EMPTY: If an instant error occurs or an abort_order event is received.
+    PENDING -> ACKED: Upon receiving an acknowledge_order event from the exchange.
+    ACKED -> MAKER: Upon receiving a maker_order event indicating the order is placed in the order book.
+    ACKED -> EMPTY: If the order is fully executed or canceled before becoming MAKER.
+    MAKER -> EMPTY: If the order is executed fully or cancelled after becoming MAKER.
+
+State Transitions (during active auctions):
+    ACKED -> ACTIVE: Upon receiving an active_order event
+    MAKER -> ACTIVE: Upon receiving an active_order event
+    ACTIVE -> EMPTY: If the order is fully executed or is cancelled after the auction
+    ACTIVE -> MAKER: If the order is not fully executed and goes/returns to orderbook
+"""
 
 class OrderState(Enum):
     EMPTY = 0
@@ -545,6 +567,18 @@ class MarketMaker:
         order.price = None
 
     def exec_ack(self, order):
+        """
+        Handles the acknowledgment of an order sent to the exchange.
+
+        Args:
+            order_id (str): The unique identifier of the order.
+            details (dict): Additional details about the order acknowledgment.
+
+        Process:
+            - Locate the order in the circular buffer using order_id.
+            - Update the order state from PENDING to ACKED.
+            - If the acknowledgment indicates an error, revert the order state to EMPTY.
+        """
         if (order.state != OrderState.PENDING):
             self.logger.warning(
                 "Received acknowledge, but order %d is in state %s",
@@ -607,6 +641,18 @@ class MarketMaker:
         order.state = OrderState.ACTIVE
 
     def exec_remove(self, order):
+        """
+        Handles the removal or cancellation of an order.
+
+        Args:
+            order_id (str): The unique identifier of the order.
+            details (dict): Additional details about the order removal.
+
+        Process:
+            - Locate the order in the circular buffer using order_id.
+            - If successfully removed, set state to EMPTY.
+        """
+
         if (order.cancel != CancelState.PENDING):
             self.logger.warning("Received unexpected remove_order in id %d",
                                 order.clordid)
@@ -715,7 +761,7 @@ class MarketMaker:
         self.bids.recalculate_all_orders()
         self.asks.recalculate_all_orders()
     
-    def tickspread_market_data_partial(self, payload):
+    def quiver_market_data_partial(self, payload):
         print("MARKET DATA PARTIAL: ", payload)
         if (not 'execution_band' in payload or payload['execution_band'] == None):
             logging.warning("No execution_band in market_data partial")
@@ -739,7 +785,7 @@ class MarketMaker:
         self.execution_band_low = Decimal(execution_band['low'])
         self.has_execution_band = True
 
-    def tickspread_user_data_partial(self, payload):
+    def quiver_user_data_partial(self, payload):
         print("USER DATA PARTIAL")
         if (not 'balance' in payload):
             logging.warning("No balance in user_data partial")
@@ -855,107 +901,166 @@ class MarketMaker:
         self.api.dispatch_batch()
         return
 
-    def tickspread_callback(self, data):
-        if (not 'event' in data):
-            logging.warning("No 'event' in TickSpread message")
-            return 1
-        if (not 'payload' in data):
-            logging.warning("No 'payload' in TickSpread message")
-            return 1
-        if (not 'topic' in data):
-            logging.warning("No 'topic' in TickSpread message")
-            return 1
+    def quiver_callback(self, data):
+        """
+        Callback method to handle events received from the Quiver (TickSpread) feed.
+
+        Args:
+            data (dict): The data payload containing event information.
+
+        Process:
+            - Validates the presence of required keys ('event', 'payload', 'topic').
+            - Dispatches the event to the appropriate handler based on the event type.
+            - Handles different event types, updating order states and managing liquidity accordingly.
+        """
+        # Validate that the necessary keys are present in the data
+        if not self.has_required_keys(data):
+            return 1  # Early exit if required keys are missing
 
         event = data['event']
         payload = data['payload']
         topic = data['topic']
-        
-        if (event == "partial"):
-            if (topic == "user_data"):
-                self.tickspread_user_data_partial(payload)
-                #print("OK_1")                    
-                self.cancel_old_orders()
-                #print("FINISH_OK")
-                return 0
-            
-            if (topic == "market_data"):
-                self.tickspread_market_data_partial(payload)
-        
-        if (event == "update"):
-            if (not 'auction_id' in payload):
-                self.logger.warning(
-                    "No 'auction_id' in TickSpread %s payload", event)
-                return 0
 
-            auction_id = int(payload['auction_id'])
-            if (self.last_auction_id and auction_id != self.last_auction_id + 1):
-                self.logger.warning(
-                    "Received auction_id = %d, last was %d", auction_id, self.last_auction_id)
-                return 0
-            self.last_auction_id = auction_id
-            #self.logger.info("AUCTION: %d" % auction_id)
-            
-            if ('execution_band' in payload):
-                execution_band = payload['execution_band']
-                if (not 'high' in execution_band):
-                    self.logger.warning("No high in execution_band")
-                    return 0
-                if (not 'low' in execution_band):
-                    self.logger.warning("No low in execution_band")
-                    return 0
-                self.execution_band_high = Decimal(execution_band['high'])
-                self.execution_band_low = Decimal(execution_band['low'])
-        elif (event == "acknowledge_order" or event == "maker_order"
-              or event == "delete_order" or event == "abort_create"
-              or event == "active_order" or event == "reject_order"
-              or event == "reject_cancel"):
-            #print("receive accept: ", event)
-            if (not 'client_order_id' in payload):
-                self.logger.warning(
-                    "No 'client_order_id' in TickSpread %s payload", event)
-                return 0
-            clordid = int(payload['client_order_id'])
-            #print("clordid = %d" % clordid)
-            self.receive_exec(event, clordid)
-            #print("fin accept")
-        elif (event == "taker_trade" or event == "maker_trade" or
-              event == "liquidation" or event == "auto_deleverage"):
-            #print("receive trade")
-            if (not 'client_order_id' in payload):
-                self.logger.warning(
-                    "No 'client_order_id' in TickSpread %s payload", event)
-                clordid = 0
-            else:
-                clordid = int(payload['client_order_id'])
+        # Handle 'partial' events based on the topic
+        if event == "partial":
+            self.handle_partial_event(topic, payload)
+            return 0  # Early exit after handling partial event
 
-            if (not 'execution_amount' in payload):
-                self.logger.warning(
-                    "No 'execution_amount' in TickSpread %s payload", event)
-                return 0
-            if (not 'side' in payload):
-                self.logger.warning(
-                    "No 'side' in TickSpread %s payload", event)
-                return 0
-            execution_amount = Decimal(payload['execution_amount'])
-            #print("clordid = %d, execution_amount = %d" % (clordid, execution_amount))
-            self.receive_exec_trade(
-                event, clordid, execution_amount, payload['side'])
-        elif (event == "trade"):
-            pass
-        elif (event == "balance"):
-            pass
-        elif (event == "phx_reply"):
-            pass
-        elif (event == "partial"):
-            pass
-        elif (event == "update_position"):
-            pass
-        elif (event == "reject_cancel"):
-            pass
+        # Handle 'update' events
+        if event == "update":
+            self.handle_update_event(payload)
+
+        # Handle various order-related events
+        elif event in {"acknowledge_order", "maker_order", "delete_order", "abort_create",
+                    "active_order", "reject_order", "reject_cancel"}:
+            self.handle_order_event(event, payload)
+
+        # Handle trade-related events
+        elif event in {"taker_trade", "maker_trade", "liquidation", "auto_deleverage"}:
+            self.handle_trade_event(event, payload)
+
+        # Handle other events that do not require specific actions
+        elif event in {"trade", "balance", "phx_reply", "update_position"}:
+            pass  # No action needed for these events
+
+        # Handle unknown or unhandled events
         else:
-            print("UNKNOWN EVENT: %s" % event)
-            print(data)
-        return 0
+            self.logger.warning("UNKNOWN EVENT: %s", event)
+            self.logger.warning(data)
+
+        return 0  # Indicate successful handling of the event
+
+    def has_required_keys(self, data):
+        required_keys = ['event', 'payload', 'topic']
+        for key in required_keys:
+            if key not in data:
+                self.logger.warning("No '%s' in TickSpread message", key)
+                return False
+        return True
+
+    def handle_partial_event(self, topic, payload):
+        """
+        Handles 'partial' events based on the topic.
+
+        Args:
+            topic (str): The topic of the partial event ('user_data' or 'market_data').
+            payload (dict): The payload of the event.
+
+        Process:
+            - If topic is 'user_data', process partial user data and cancel old orders.
+            - If topic is 'market_data', process partial market data.
+        """
+        if topic == "user_data":
+            self.quiver_user_data_partial(payload)
+            self.cancel_old_orders()  # Cancel outdated orders to maintain liquidity curves
+        elif topic == "market_data":
+            self.quiver_market_data_partial(payload)
+
+    def handle_update_event(self, payload):
+        """
+        Handles 'update' events, which may include auction and execution band updates.
+
+        Args:
+            payload (dict): The payload of the 'update' event.
+
+        Process:
+            - Validates the presence of 'auction_id'.
+            - Ensures auction IDs are sequential to maintain order consistency.
+            - Updates execution bands if present to adjust liquidity parameters.
+        """
+        if 'auction_id' not in payload:
+            self.logger.warning("No 'auction_id' in TickSpread update payload")
+            return
+
+        auction_id = int(payload['auction_id'])
+
+        # Verify that auction_id is sequential to prevent inconsistencies
+        if self.last_auction_id and auction_id != self.last_auction_id + 1:
+            self.logger.warning("Received auction_id = %d, last was %d", auction_id, self.last_auction_id)
+            return
+        self.last_auction_id = auction_id
+
+        # Update execution bands if provided in the payload
+        if 'execution_band' in payload:
+            execution_band = payload['execution_band']
+            if 'high' not in execution_band:
+                self.logger.warning("No 'high' in execution_band")
+                return
+            if 'low' not in execution_band:
+                self.logger.warning("No 'low' in execution_band")
+                return
+            self.execution_band_high = Decimal(execution_band['high'])
+            self.execution_band_low = Decimal(execution_band['low'])
+
+    def handle_order_event(self, event, payload):
+        """
+        Handles order-related events by updating the execution state.
+
+        Args:
+            event (str): The type of order event.
+            payload (dict): The payload containing order details.
+
+        Process:
+            - Validates the presence of 'client_order_id'.
+            - Extracts the client order ID and processes the execution accordingly.
+        """
+        if 'client_order_id' not in payload:
+            self.logger.warning("No 'client_order_id' in TickSpread %s payload", event)
+            return
+
+        clordid = int(payload['client_order_id'])
+        self.receive_exec(event, clordid)  # Update order state based on the event
+
+    def handle_trade_event(self, event, payload):
+        """
+        Handles trade-related events by processing executed trades.
+
+        Args:
+            event (str): The type of trade event.
+            payload (dict): The payload containing trade details.
+
+        Process:
+            - Validates the presence of 'client_order_id', 'execution_amount', and 'side'.
+            - Extracts trade details and processes the trade execution.
+        """
+        clordid = payload.get('client_order_id')
+        if clordid is None:
+            self.logger.warning("No 'client_order_id' in TickSpread %s payload", event)
+            clordid = 0
+        else:
+            clordid = int(clordid)
+
+        if 'execution_amount' not in payload:
+            self.logger.warning("No 'execution_amount' in TickSpread %s payload", event)
+            return
+        if 'side' not in payload:
+            self.logger.warning("No 'side' in TickSpread %s payload", event)
+            return
+
+        execution_amount = Decimal(payload['execution_amount'])
+        side = payload['side']
+
+        self.receive_exec_trade(event, clordid, execution_amount, side)  # Update trade execution details
 
     def common_callback(self, data):
         # self.logger.info("common_callback")
@@ -1018,7 +1123,7 @@ class MarketMaker:
 
         rc = 0
         if (source == 'tickspread'):
-            rc = self.tickspread_callback(data)
+            rc = self.quiver_callback(data)
         elif (source == 'ftx'):
             rc = self.ftx_callback(data)
         elif (source == 'binance-s'):
