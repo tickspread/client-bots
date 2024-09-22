@@ -22,7 +22,7 @@
             "tick_jump": "0.05",
             "orders_per_side": 35,
             "min_order_size": "10.0",
-            "max_position": "500.0",
+            "max_position": "300.0",
             "max_order_size": "100.0"
         },
         "BNB": {
