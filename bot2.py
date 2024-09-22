@@ -329,7 +329,7 @@ class MarketMakerSide:
             size = min(size, self.parent.max_order_size)
             # Round down the size to the precision of min_order_size, but don't force it to be a multiple
             rounded_size = self.round_down_to_precision(size, self.min_order_size)
-            self.parent.logger.info("Found empty order %d, will send NEW with size %d", self.get_order_index, rounded_size)
+            self.parent.logger.info("Found empty order %d, will send NEW with size %d", self.get_order_index(i), rounded_size)
             if rounded_size >= self.min_order_size:
                 self.parent.send_new(order, rounded_size, price)
 
