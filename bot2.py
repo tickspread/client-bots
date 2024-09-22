@@ -1141,8 +1141,6 @@ def parse_arguments():
                         help='Set the TickSpread password to login (overrides secrets.json)')
     parser.add_argument('--market', dest='market', default=None,
                         help='Set the market to run the bot on (default from config)')
-    parser.add_argument('--external_market', dest='external_market', default=None,
-                        help='Set the external market (default from config)')
     parser.add_argument('--money_asset', dest='money_asset', default=None,
                         help='Set the money asset (default from config)')
 
@@ -1160,7 +1158,6 @@ async def main():
     general_config['id'] = args.id if args.id is not None else general_config.get('id', '0')
     general_config['env'] = args.env if args.env is not None else general_config.get('env', 'prod')
     general_config['market'] = args.market if args.market is not None else general_config.get('market', 'ETH')
-    general_config['external_market'] = args.external_market if args.external_market is not None else general_config.get('external_market', 'XAU')
     general_config['money_asset'] = args.money_asset if args.money_asset is not None else general_config.get('money_asset', 'USD')
 
     # Override tickspread_password from command line or secrets.json
@@ -1231,7 +1228,7 @@ async def main():
     api.on_message(mmaker.callback)
 
     # Initialize and subscribe to external market APIs
-    external_market = general_config['external_market']
+    external_market = market_settings['external_market']
     if external_market == 'XAU':
         external_api = PythXauAPI()
         external_api.subscribe_index_price(external_market)

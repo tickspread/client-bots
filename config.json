@@ -3,7 +3,6 @@
         "id": "0",
         "env": "prod",
         "market": "ETH",
-        "external_market": "ETHUSDT",
         "money_asset": "USD"
     },
     "logging": {
@@ -13,12 +12,14 @@
     },
     "market_settings": {
         "ETH": {
+            "external_market": "ETHUSDT",
             "tick_jump": "0.5",
             "orders_per_side": 35,
             "min_order_size": "0.5",
             "max_position": "100.0"
         },
         "SOL": {
+            "external_market": "SOLUSDT",
             "tick_jump": "0.05",
             "orders_per_side": 35,
             "min_order_size": "10.0",
@@ -26,6 +27,7 @@
             "max_order_size": "100.0"
         },
         "BNB": {
+            "external_market": "BNBUSDT",
             "tick_jump": "0.5",
             "orders_per_side": 20,
             "min_order_size": "1.0",
@@ -33,12 +35,14 @@
             "max_liquidity": "70.0"
         },
         "BTC": {
+            "external_market": "BTCUSDT",
             "tick_jump": "2.0",
             "orders_per_side": 50,
             "min_order_size": "0.01",
             "max_position": "18.0"
         },
         "BTC|y000": {
+            "external_market": "BTCUSDT",
             "tick_jump": "100.0",
             "orders_per_side": 40,
             "min_order_size": "0.0003",
@@ -47,6 +51,7 @@
             "leverage": 2
         },
         "BTC|n000": {
+            "external_market": "BTCUSDT",
             "tick_jump": "100.0",
             "orders_per_side": 40,
             "min_order_size": "0.0003",
@@ -55,24 +60,28 @@
             "leverage": 2
         },
         "ETH-TEST": {
+            "external_market": "ETHUSDT",
             "tick_jump": "0.2",
             "orders_per_side": 10,
             "min_order_size": "0.001",
             "max_position": "1.0"
         },
         "SOL-TEST": {
+            "external_market": "SOLUSDT",
             "tick_jump": "0.01",
             "orders_per_side": 0,
             "min_order_size": "0.020",
             "max_position": "20.0"
         },
         "BTC-TEST": {
+            "external_market": "BTCUSDT",
             "tick_jump": "1.0",
             "orders_per_side": 10,
             "min_order_size": "0.01",
             "max_position": "4.0"
         },
         "BTC-PERP": {
+            "external_market": "BTCUSDT",
             "tick_jump": "2.0",
             "orders_per_side": 50,
             "min_order_size": "0.01",
