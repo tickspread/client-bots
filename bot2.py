@@ -1,81 +1,19 @@
 # -*- coding: utf-8 -*-
-"""Example TickSpread Bot
 
-This module gives an example market-making bot that listens to market-data
-feeds from external exchanges (Binance, Huobi, BitMEX and Bybit) and
-puts orders at TickSpread.
-
-The bot controls the state for each order, listening to update at the
-user-data feed. It respects a maximum position and attemps to maintain a target
-number of open orders, subject to a maximum.
-
-All orders sent and updates received are logged at "bot.log".
-
-Example:
-    To run the bot::
-
-        $ python3 bot.py
-
-Use this bot are your own risk! No guarantees -- it probably has bugs!
-
-Todo:
-    * External real-time parameter changes
-
-"""
-
-import requests
 import json
+import argparse
+from decimal import Decimal, ROUND_DOWN, ROUND_UP
+
 import asyncio
-import websockets
 import logging
 from enum import Enum
 
 import time
-import numpy as np
-import math
 import sys
-import os
-import argparse
 import logging.handlers
 
-from decimal import Decimal, ROUND_DOWN, ROUND_UP, localcontext
 from tickspread_api import TickSpreadAPI
-# from python_loopring.tickspread_dex import TickSpreadDex
-from outside_api import ByBitAPI, BinanceAPI, BitMEXAPI, HuobiAPI, PythXauAPI
-
-parser = argparse.ArgumentParser(
-    description='Run a market maker bot on TickSpread exchange.')
-parser.add_argument('--id', dest='id', default="0",
-                    help='set the id to run the account (default: 0)')
-parser.add_argument('--env', dest='env', default="prod",
-                    help='set the env to run the account (default: prod)')
-parser.add_argument('--log', dest='log', default="shell",
-                    help='set the output for the logs (default: shell)')
-parser.add_argument('--dex', dest='dex', default="false",
-                    help='set the tyoe of exchange (default: prod)')
-parser.add_argument('--tickspread_password', dest='tickspread_password', default="maker",
-                    help='set the tickspread_password to login (default: maker)')
-parser.add_argument('--market', dest='market', required=True)
-parser.add_argument('--external_market', dest='external_market', required=True)
-parser.add_argument('--money_asset', dest='money_asset', required=True)
-
-args = parser.parse_args()
-id = args.id
-env = args.env
-log_file = args.log
-dex = True if args.dex == "true" else False
-tickspread_password = args.tickspread_password
-
-logging.basicConfig(level=logging.DEBUG,
-                    format='%(asctime)s %(levelname)-8s %(message)s')
-if log_file != "shell":
-    # log_handler = logging.handlers.WatchedFileHandler(
-    #     '/home/ubuntu/store/logs/bot_%s.log' % id)
-    log_handler = logging.handlers.WatchedFileHandler(log_file)
-    logger = logging.getLogger()
-    logger.removeHandler(logger.handlers[0])
-    logger.addHandler(log_handler)
-
+from outside_api import BinanceAPI, PythXauAPI
 
 class Side(Enum):
     BID = 1
@@ -468,11 +406,6 @@ class MarketMaker:
         self.position_liquidation_price = 0
         self.position_total_margin = 0
         self.position_funding = 0
-        
-        if dex == True:
-            self.has_user_balance = True
-            self.has_old_orders = True
-            self.has_user_position = True
 
         # PnL
         self.gross_profit = 0
@@ -541,9 +474,6 @@ class MarketMaker:
         if (self.real):
             self.register_cancel(order)
             self.api.delete_order(order.clordid, symbol=self.symbol, asynchronous=True, batch=True)
-        
-        if dex:
-            self._delete_order(order)
 
     def register_new(self, order, clordid, amount, price):
         assert (order.state == OrderState.EMPTY)
@@ -1140,117 +1070,181 @@ class MarketMaker:
             rc = self.pyth_xau_callback(data)
         return rc
 
+def load_json_file(file_path):
+    """
+    Loads a JSON file and returns the parsed data.
+
+    Args:
+        file_path (str): Path to the JSON file.
+
+    Returns:
+        dict: Parsed JSON data.
+
+    Raises:
+        FileNotFoundError: If the file does not exist.
+        json.JSONDecodeError: If the file contains invalid JSON.
+    """
+    try:
+        with open(file_path, 'r') as f:
+            return json.load(f)
+    except FileNotFoundError:
+        logging.error(f"Configuration file {file_path} not found.")
+        sys.exit(1)
+    except json.JSONDecodeError as e:
+        logging.error(f"Error decoding JSON from {file_path}: {e}")
+        sys.exit(1)
+
+def setup_logging(config_logging, log_output, log_level_override=None):
+    """
+    Configures the logging based on the configuration and command line arguments.
+
+    Args:
+        config_logging (dict): Logging configuration from config.json.
+        log_output (str): Log output destination from command line argument.
+        log_level_override (str, optional): Log level override from command line argument.
+    """
+    log_level = getattr(logging, log_level_override.upper(), config_logging.get('level', 'DEBUG')) if log_level_override else config_logging.get('level', 'DEBUG')
+    log_format = config_logging.get('format', '%(asctime)s %(levelname)-8s %(message)s')
+
+    logging.basicConfig(level=log_level, format=log_format)
+
+    if log_output != "shell":
+        try:
+            log_handler = logging.handlers.WatchedFileHandler(log_output)
+            logger = logging.getLogger()
+            logger.removeHandler(logger.handlers[0])  # Remove default handler
+            logger.addHandler(log_handler)
+        except Exception as e:
+            logging.error(f"Failed to set log file handler: {e}")
+            sys.exit(1)
+
+def parse_arguments():
+    """
+    Parses command line arguments and returns them.
+
+    Returns:
+        argparse.Namespace: Parsed command line arguments.
+    """
+    parser = argparse.ArgumentParser(
+        description='Run a market maker bot on TickSpread exchange.'
+    )
+    parser.add_argument('--id', dest='id', default=None,
+                        help='Set the id to run the account (default from config)')
+    parser.add_argument('--env', dest='env', default=None,
+                        help='Set the environment to run the account (default from config)')
+    parser.add_argument('--log', dest='log', default=None,
+                        help='Set the output for the logs (default from config)')
+    parser.add_argument('--log_level', dest='log_level', default=None,
+                        help='Set the logging level (default from config)')
+    parser.add_argument('--tickspread_password', dest='tickspread_password', default=None,
+                        help='Set the TickSpread password to login (overrides secrets.json)')
+    parser.add_argument('--market', dest='market', default=None,
+                        help='Set the market to run the bot on (default from config)')
+    parser.add_argument('--external_market', dest='external_market', default=None,
+                        help='Set the external market (default from config)')
+    parser.add_argument('--money_asset', dest='money_asset', default=None,
+                        help='Set the money asset (default from config)')
+
+    return parser.parse_args()
 
 async def main():
-    if dex == True:
-        # api = TickSpreadDex(id_multiple=1000, env=env)
-        # mmaker = MarketMaker(api, tick_jump=0.5, orders_per_side=50,
-        #                  min_order_size=0.01, max_position=4000)
-        pass
+    # Parse command line arguments
+    args = parse_arguments()
+
+    # Load configurations
+    config = load_json_file('config.json')
+
+    # Override configurations with command line arguments if provided
+    general_config = config.get('general', {})
+    general_config['id'] = args.id if args.id is not None else general_config.get('id', '0')
+    general_config['env'] = args.env if args.env is not None else general_config.get('env', 'prod')
+    general_config['market'] = args.market if args.market is not None else general_config.get('market', 'ETH')
+    general_config['external_market'] = args.external_market if args.external_market is not None else general_config.get('external_market', 'XAU')
+    general_config['money_asset'] = args.money_asset if args.money_asset is not None else general_config.get('money_asset', 'USD')
+
+    # Override tickspread_password from command line or secrets.json
+    tickspread_password = args.tickspread_password if args.tickspread_password is not None else load_json_file('secrets.json').get('tickspread_password', 'maker')
+
+    # Setup logging
+    logging_config = config.get('logging', {})
+    setup_logging(logging_config, log_output=args.log if args.log else logging_config.get('file', 'shell'),
+                 log_level_override=args.log_level)
+
+    # Initialize TickSpreadAPI
+    api = TickSpreadAPI(id_multiple=1000, env=general_config['env'])
+
+    # Initialize MarketMaker based on the selected market
+    market = general_config['market']
+    market_settings = config.get('market_settings', {}).get(market)
+
+    if not market_settings:
+        logging.error(f"Market settings for '{market}' not found in config.json.")
+        sys.exit(1)
+
+    # Convert string parameters to appropriate types
+    try:
+        tick_jump = Decimal(market_settings['tick_jump'])
+        orders_per_side = int(market_settings['orders_per_side'])
+        min_order_size = Decimal(market_settings['min_order_size'])
+        max_position = Decimal(market_settings['max_position'])
+        max_order_size = Decimal(market_settings.get('max_order_size')) if 'max_order_size' in market_settings else None
+        max_liquidity = Decimal(market_settings.get('max_liquidity')) if 'max_liquidity' in market_settings else None
+        max_diff = float(market_settings.get('max_diff')) if 'max_diff' in market_settings else None
+        leverage = int(market_settings.get('leverage')) if 'leverage' in market_settings else None
+    except (KeyError, ValueError) as e:
+        logging.error(f"Invalid market settings for '{market}': {e}")
+        sys.exit(1)
+
+    # Initialize MarketMaker with the appropriate parameters
+    mmaker_params = {
+        'tick_jump': tick_jump,
+        'orders_per_side': orders_per_side,
+        'min_order_size': min_order_size,
+        'max_position': max_position
+    }
+
+    if max_order_size is not None:
+        mmaker_params['max_order_size'] = max_order_size
+    if max_liquidity is not None:
+        mmaker_params['max_liquidity'] = max_liquidity
+    if max_diff is not None:
+        mmaker_params['max_diff'] = max_diff
+    if leverage is not None:
+        mmaker_params['leverage'] = leverage
+
+    mmaker = MarketMaker(api, **mmaker_params)
+
+    # Register and login to TickSpread API
+    logging.info("LOGIN")
+    login_status = api.login(f'maker{general_config["id"]}@tickspread.com', tickspread_password)
+    if not login_status:
+        logging.error("Login Failure")
+        asyncio.get_event_loop().stop()
+        return 1
+    logging.info("STARTING")
+
+    # Connect to TickSpread API and subscribe to necessary feeds
+    await api.connect()
+    await api.subscribe("market_data", {"symbol": market})
+    await api.subscribe("user_data", {"symbol": market})
+    api.on_message(mmaker.callback)
+
+    # Initialize and subscribe to external market APIs
+    external_market = general_config['external_market']
+    if external_market == 'XAU':
+        external_api = PythXauAPI()
+        external_api.subscribe_index_price(external_market)
+        external_api.on_message(mmaker.callback)
     else:
-        api = TickSpreadAPI(id_multiple=1000, env=env)
-        # mmaker = MarketMaker(api, tick_jump=Decimal("0.2"), orders_per_side=10,
-        #                  min_order_size=Decimal("1.5"), max_position=Decimal("40.0"))
+        binance_api = BinanceAPI()
+        binance_api.subscribe_futures(external_market)
+        binance_api.on_message(mmaker.callback)
 
-        # if args.market == "XAU-TEST":
-        #     mmaker = MarketMaker(api, tick_jump=Decimal("0.01"), orders_per_side=10,
-        #                     min_order_size=Decimal("0.20"), max_position=Decimal("50.0"))
-            
-        # if args.market == "XAU":
-        #     mmaker = MarketMaker(api, tick_jump=Decimal("0.01"), orders_per_side=50,
-        #                     min_order_size=Decimal("0.05"), max_position=Decimal("5.0"))
+    logging.info("FINISH INIT")
 
-        if args.market == "ETH":
-            mmaker = MarketMaker(api, tick_jump=Decimal("0.5"), orders_per_side=35,
-                            min_order_size=Decimal("0.5"), max_position=Decimal("100.0"))
-
-        if args.market == "SOL":
-            mmaker = MarketMaker(api, tick_jump=Decimal("0.05"), orders_per_side=35,
-                            min_order_size=Decimal("10.0"), max_position=Decimal("500.0"),
-                            max_order_size=Decimal("100.0"))
-
-        if args.market == "BNB":
-            mmaker = MarketMaker(api, tick_jump=Decimal("0.5"), orders_per_side=20,
-                            min_order_size=Decimal("1.0"), max_position=Decimal("150.0"), max_liquidity=Decimal("70.0"))
-        
-        # if args.market == "ETH-TEST":
-        #     # mmaker = MarketMaker(api, tick_jump=Decimal("0.2"), orders_per_side8,
-        #     #                 min_order_size=Decimal("1.5"), max_position=Decimal("40.0"))
-        #     mmaker = MarketMaker(api, tick_jump=Decimal("0.2"), orders_per_side=10,
-        #                     min_order_size=Decimal("0.001"), max_position=Decimal("1.0"))
-            # mmaker = MarketMaker(api, tick_jump=Decimal("0.2"), orders_per_side=10,
-            #                 min_order_size=Decimal("0.2"), max_position=Decimal("1.0"))
-        
-        # if args.market == "SOL-TEST":
-        #     mmaker = MarketMaker(api, tick_jump=Decimal("0.01"), orders_per_side=0,
-        #                     min_order_size=Decimal("0.020"), max_position=Decimal("20.0"))
-
-        # if args.market == "BTC-TEST" or args.market == "BTC-PERP":
-        #     mmaker = MarketMaker(api, tick_jump=Decimal("1.0"), orders_per_side=10,
-        #                     min_order_size=Decimal("0.01"), max_position=Decimal("4.0"))
-
-        if args.market == "BTC" or args.market == "BTC-PERP":
-            mmaker = MarketMaker(api, tick_jump=Decimal("2.0"), orders_per_side=50,
-                            min_order_size=Decimal("0.01"), max_position=Decimal("18.0"))       
-
-        if args.market == "BTC|y000" or args.market == "BTC|n000":
-            mmaker = MarketMaker(api, tick_jump=Decimal("100.0"), orders_per_side=40,
-                            min_order_size=Decimal("0.0003"), max_position=Decimal("0.2"), max_diff=0.6, leverage=2)
-        print("REGISTER")
-        api.register('maker%s@tickspread.com' % id, tickspread_password)
-        time.sleep(0.3)
-        print("LOGIN")
-        # CHANGE ID MULTIPLE to 100 above when moving back to maker@tickspread.com 
-        login_status = api.login('maker%s@tickspread.com' %
-                                id, tickspread_password)
-        if (not login_status):
-            asyncio.get_event_loop().stop()
-            print("Login Failure")
-            return 1
-        print("STARTING")
-
-        #bybit_api = ByBitAPI()
-
-        #bitmex_api = BitMEXAPI()
-        #huobi_api = HuobiAPI()
-
-        await api.connect()
-        await api.subscribe("market_data", {"symbol": args.market})
-        await api.subscribe("user_data", {"symbol": args.market})
-        api.on_message(mmaker.callback)
-        
-        # These variables are not referred to anywhere, but an object is being created
-        # We're passing the mmaker callbacks
-        
-        if args.external_market == 'XAU':
-            external_api = PythXauAPI()
-            external_api.subscribe_index_price(args.external_market)
-            external_api.on_message(mmaker.callback)
-        else:
-            binance_api = BinanceAPI()
-            binance_api.subscribe_futures(args.external_market)
-            binance_api.on_message(mmaker.callback)
-
-    # await bybit_api.connect()
-    # await bybit_api.subscribe()
-    # bybit_api.on_message(mmaker.callback)
-
-    # if dex == True:
-    #     binance_api.subscribe_futures('ETHUSDT')
-    # else:
-
-    # binance_api = BinanceAPI(
-    #     os.getenv('BINANCE_KEY'),
-    #     os.getenv('BINANCE_SECRET'))
-
-    # await bitmex_api.connect()
-    # bitmex_api.on_message(mmaker.callback)
-
-    # await huobi_api.connect()
-    # await huobi_api.subscribe()
-    # huobi_api.on_message(mmaker.callback)
-    print("FINISH INIT")
-
+    # Keep the bot running
+    while True:
+        await asyncio.sleep(1)
 
 if __name__ == "__main__":
     try:

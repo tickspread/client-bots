@@ -1,0 +1,92 @@
+{
+    "general": {
+        "id": "0",
+        "env": "prod",
+        "market": "ETH",
+        "external_market": "ETHUSDT",
+        "money_asset": "USD"
+    },
+    "logging": {
+        "level": "DEBUG",
+        "format": "%(asctime)s %(levelname)-8s %(message)s",
+        "file": "shell"
+    },
+    "market_settings": {
+        "ETH": {
+            "tick_jump": "0.5",
+            "orders_per_side": 35,
+            "min_order_size": "0.5",
+            "max_position": "100.0"
+        },
+        "SOL": {
+            "tick_jump": "0.05",
+            "orders_per_side": 35,
+            "min_order_size": "10.0",
+            "max_position": "500.0",
+            "max_order_size": "100.0"
+        },
+        "BNB": {
+            "tick_jump": "0.5",
+            "orders_per_side": 20,
+            "min_order_size": "1.0",
+            "max_position": "150.0",
+            "max_liquidity": "70.0"
+        },
+        "BTC": {
+            "tick_jump": "2.0",
+            "orders_per_side": 50,
+            "min_order_size": "0.01",
+            "max_position": "18.0"
+        },
+        "BTC|y000": {
+            "tick_jump": "100.0",
+            "orders_per_side": 40,
+            "min_order_size": "0.0003",
+            "max_position": "0.2",
+            "max_diff": 0.6,
+            "leverage": 2
+        },
+        "BTC|n000": {
+            "tick_jump": "100.0",
+            "orders_per_side": 40,
+            "min_order_size": "0.0003",
+            "max_position": "0.2",
+            "max_diff": 0.6,
+            "leverage": 2
+        },
+        "ETH-TEST": {
+            "tick_jump": "0.2",
+            "orders_per_side": 10,
+            "min_order_size": "0.001",
+            "max_position": "1.0"
+        },
+        "SOL-TEST": {
+            "tick_jump": "0.01",
+            "orders_per_side": 0,
+            "min_order_size": "0.020",
+            "max_position": "20.0"
+        },
+        "BTC-TEST": {
+            "tick_jump": "1.0",
+            "orders_per_side": 10,
+            "min_order_size": "0.01",
+            "max_position": "4.0"
+        },
+        "BTC-PERP": {
+            "tick_jump": "2.0",
+            "orders_per_side": 50,
+            "min_order_size": "0.01",
+            "max_position": "18.0"
+        }
+    },
+    "liquidity_curves": {
+        "avg_tick_liquidity": "10.0",
+        "max_liquidity": "100.0",
+        "liquidity_curve_hysteresis_low": 0.8,
+        "liquidity_curve_hysteresis_minimum": 0.5
+    },
+    "execution_band": {
+        "high": "105.0",
+        "low": "95.0"
+    }
+}
