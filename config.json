@@ -7,7 +7,7 @@
         "money_asset": "USD"
     },
     "logging": {
-        "level": "DEBUG",
+        "level": "INFO",
         "format": "%(asctime)s %(levelname)-8s %(message)s",
         "file": "shell"
     },
