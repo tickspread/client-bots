@@ -1104,7 +1104,7 @@ def setup_logging(config_logging, log_output, log_level_override=None):
         log_output (str): Log output destination from command line argument.
         log_level_override (str, optional): Log level override from command line argument.
     """
-    log_level = getattr(logging, log_level_override.upper(), config_logging.get('level', 'DEBUG')) if log_level_override else config_logging.get('level', 'DEBUG')
+    log_level = getattr(logging, log_level_override.upper(), config_logging.get('level', 'INFO')) if log_level_override else config_logging.get('level', 'INFO')
     log_format = config_logging.get('format', '%(asctime)s %(levelname)-8s %(message)s')
 
     logging.basicConfig(level=log_level, format=log_format)
