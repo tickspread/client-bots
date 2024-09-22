@@ -235,13 +235,6 @@ class MarketMakerSide:
         liquidity_counter = Decimal(0)
         liquidity_pending_cancel = Decimal(0)
         
-        expected_liquidity = self.parent.avg_tick_liquidity * initial_delta_ticks
-        expected_liquidity = min(expected_liquidity, self.parent.max_liquidity)
-
-        self.parent.logger.debug(f"initial_price: {initial_price}, fair_price: {self.parent.fair_price}")
-        self.parent.logger.debug(f"initial_delta_ticks: {initial_delta_ticks}")
-        self.parent.logger.debug(f"expected_liquidity: {expected_liquidity}")
-
         for i in range(self.max_orders):
             '''
             self.parent.logger.info("index = %d (%d)",
@@ -251,15 +244,31 @@ class MarketMakerSide:
 
             index = (self.top_order + i) % (self.max_orders)
             order = self.orders[index]
+
+            delta_ticks = 0
             
+            # Calculate delta_ticks for the current price level
+            delta_ticks = (price - self.parent.fair_price) / price_increment
+            delta_ticks = delta_ticks.quantize(Decimal("0.001"), rounding=ROUND_DOWN)
+    
+            # Calculate expected liquidity for the current price level
+            expected_liquidity = self.parent.avg_tick_liquidity * delta_ticks
+            expected_liquidity = min(expected_liquidity, self.parent.max_liquidity)
+
             assert(liquidity_counter >= liquidity_pending_cancel)
             liquidity_delta_high = expected_liquidity - (liquidity_counter - liquidity_pending_cancel)
-            liquidity_delta_low = expected_liquidity * self.parent.liquidity_curve_hysteresis - liquidity_counter
+            liquidity_delta_low = expected_liquidity * self.parent.liquidity_curve_hysteresis_low - liquidity_counter
+            liquidity_delta_minimum = expected_liquidity * self.parent.liquidity_curve_hysteresis_minimum - liquidity_counter - self.parent.avg_tick_liquidity
 
             if (order.state != OrderState.EMPTY and order.cancel == CancelState.NORMAL):
                 if (order.price != price
-                or order.amount_left > liquidity_delta_high
-                or order_counter >= self.target_num_orders):
+                    or order.amount_left > liquidity_delta_high
+                    or order_counter >= self.target_num_orders):
+                    # Normal cancellation due to wrong price, or too much liquidity, or too many orders
+                    self.parent.send_cancel(order)
+                elif (liquidity_delta_minimum > order.amount_left
+                      and liquidity_pending_cancel == 0):
+                    # Cancellation due to too little liquidity, cancels a single order to be able to send later one
                     self.parent.send_cancel(order)
             
             if (order.state == OrderState.EMPTY and order_counter < self.target_num_orders):
@@ -349,7 +358,8 @@ class MarketMaker:
             self.max_liquidity = max_position
         
         # Hardcoded parameters -- the lower the higher the hysteresis
-        self.liquidity_curve_hysteresis = Decimal(0.9)
+        self.liquidity_curve_hysteresis_low = Decimal(0.9)
+        self.liquidity_curve_hysteresis_minimum = Decimal(0.8)
 
         # State
         self.real = True
