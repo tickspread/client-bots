@@ -979,7 +979,8 @@ async def main():
 
         if args.market == "SOL":
             mmaker = MarketMaker(api, tick_jump=Decimal("0.05"), orders_per_side=35,
-                            min_order_size=Decimal("10.0"), max_position=Decimal("500.0"))
+                            min_order_size=Decimal("10.0"), max_position=Decimal("500.0"),
+                            max_order_size=Decimal("100.0"))
 
         if args.market == "BNB":
             mmaker = MarketMaker(api, tick_jump=Decimal("0.5"), orders_per_side=20,
