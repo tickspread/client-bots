@@ -204,7 +204,7 @@ class MarketMakerSide:
             self.handle_order_cancellations(order, price, liquidity_deltas, active_order_count)
 
             # Place new orders if necessary
-            self.place_new_orders_if_needed(order, liquidity_deltas, price)
+            self.place_new_orders_if_needed(order, liquidity_deltas, price, i)
 
             # Update liquidity counters based on current order state
             active_order_count, total_liquidity, pending_cancel_liquidity = self.update_liquidity_counters(
@@ -317,7 +317,7 @@ class MarketMakerSide:
                 # Cancellation due to too little liquidity, cancels a single order to allow sending later one
                 self.parent.send_cancel(order)
 
-    def place_new_orders_if_needed(self, order, liquidity_deltas, price):
+    def place_new_orders_if_needed(self, order, liquidity_deltas, price, i):
         """
         Places new orders if the liquidity needed exceeds the minimum order size.
         
