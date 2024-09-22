@@ -66,7 +66,7 @@ log_file = args.log
 dex = True if args.dex == "true" else False
 tickspread_password = args.tickspread_password
 
-logging.basicConfig(level=logging.INFO,
+logging.basicConfig(level=logging.DEBUG,
                     format='%(asctime)s %(levelname)-8s %(message)s')
 if log_file != "shell":
     # log_handler = logging.handlers.WatchedFileHandler(
