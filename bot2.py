@@ -374,7 +374,7 @@ class MarketMakerSide:
             elif (
                 liquidity_deltas['min_threshold'] > order.amount_left
                 and liquidity_deltas['excess'] >= 0  # Ensure no pending cancellations
-                and order.amount_left < self.max_order_size
+                and order.amount_left < self.parent.max_order_size
             ):
                 # Cancellation due to too little liquidity, cancels a single order to allow sending later one
                 self.parent.send_cancel(order)
@@ -425,6 +425,14 @@ class MarketMaker:
     def __init__(self, api, *, logger=logging.getLogger(),
                  name="bot_example", version="0.0",
                  orders_per_side=8, max_position=400, tick_jump=10, min_order_size=0.5, leverage=10, max_diff = 0.004, max_liquidity = -1, max_order_size=10.0):
+        """
+        Initializes the MarketMaker with a circular buffer to manage orders.
+
+        Args:
+            max_orders (int): The maximum number of orders the bot can hold.
+            ...
+        """
+        
         # System
         self.api = api
         self.logger = logger
