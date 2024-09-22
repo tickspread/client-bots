@@ -28,10 +28,10 @@
         },
         "BNB": {
             "external_market": "BNBUSDT",
-            "tick_jump": "0.5",
-            "orders_per_side": 20,
+            "tick_jump": "0.2",
+            "orders_per_side": 50,
             "min_order_size": "1.0",
-            "max_position": "150.0",
+            "max_position": "120.0",
             "max_liquidity": "70.0"
         },
         "BTC": {
