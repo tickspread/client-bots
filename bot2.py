@@ -192,10 +192,12 @@ class MarketMakerSide:
                 self.parent.logger.info("%d: %s", index, self.orders[index])
 
     def set_new_price(self, new_price):
-        if (self.side == Side.BID):
-            new_top_price = (new_price // self.tick_jump) * self.tick_jump
+        tick_jump = self.tick_jump
+        if self.side == Side.BID:
+            new_top_price = (new_price / tick_jump).to_integral_value(rounding=ROUND_DOWN) * tick_jump
         else:
-            new_top_price = (-(-new_price // self.tick_jump)) * self.tick_jump
+            new_top_price = (new_price / tick_jump).to_integral_value(rounding=ROUND_UP) * tick_jump
+
         self.old_top_price = self.top_price
         self.top_price = new_top_price
         self.old_top_order = self.top_order
@@ -226,15 +228,19 @@ class MarketMakerSide:
             price_increment = +self.tick_jump
         price = initial_price
         
-        initial_delta_ticks = (initial_price - self.parent.fair_price)/self.tick_jump
-        initial_delta_ticks = self.round_down_to_precision(initial_delta_ticks, Decimal("0.001"))
+        initial_delta_ticks = (initial_price - self.parent.fair_price)/price_increment
+        initial_delta_ticks = initial_delta_ticks.quantize(Decimal("0.001"), rounding=ROUND_DOWN)
         
         order_counter = 0
         liquidity_counter = Decimal(0)
         liquidity_pending_cancel = Decimal(0)
         
-        expected_liquidity = Decimal(str(self.parent.avg_tick_liquidity)) * initial_delta_ticks
+        expected_liquidity = self.parent.avg_tick_liquidity * initial_delta_ticks
         expected_liquidity = min(expected_liquidity, self.parent.max_liquidity)
+
+        self.parent.logger.debug(f"initial_price: {initial_price}, fair_price: {self.parent.fair_price}")
+        self.parent.logger.debug(f"initial_delta_ticks: {initial_delta_ticks}")
+        self.parent.logger.debug(f"expected_liquidity: {expected_liquidity}")
 
         for i in range(self.max_orders):
             '''
