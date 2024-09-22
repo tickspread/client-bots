@@ -38,7 +38,7 @@ import os
 import argparse
 import logging.handlers
 
-from decimal import Decimal, ROUND_DOWN, localcontext
+from decimal import Decimal, ROUND_DOWN, ROUND_UP, localcontext
 from tickspread_api import TickSpreadAPI
 # from python_loopring.tickspread_dex import TickSpreadDex
 from outside_api import ByBitAPI, BinanceAPI, BitMEXAPI, HuobiAPI, PythXauAPI
@@ -934,7 +934,7 @@ async def main():
 
         if args.market == "ETH":
             mmaker = MarketMaker(api, tick_jump=Decimal("0.5"), orders_per_side=35,
-                            min_order_size=Decimal("0.5"), max_position=Decimal("200.0"))
+                            min_order_size=Decimal("0.5"), max_position=Decimal("100.0"))
 
         if args.market == "SOL":
             mmaker = MarketMaker(api, tick_jump=Decimal("0.05"), orders_per_side=35,
@@ -942,7 +942,7 @@ async def main():
 
         if args.market == "BNB":
             mmaker = MarketMaker(api, tick_jump=Decimal("0.5"), orders_per_side=20,
-                            min_order_size=Decimal("1.0"), max_position=Decimal("150.0"), max_liquidity=Decimal("70.0")
+                            min_order_size=Decimal("1.0"), max_position=Decimal("150.0"), max_liquidity=Decimal("70.0"))
         
         # if args.market == "ETH-TEST":
         #     # mmaker = MarketMaker(api, tick_jump=Decimal("0.2"), orders_per_side8,
