@@ -287,7 +287,11 @@ class MarketMakerSide:
                 ):
                     # Cancel order due to incorrect price, excess liquidity, or too many orders
                     self.parent.send_cancel(order)
-                elif liquidity_min_threshold > order.amount_left and pending_cancel_liquidity == 0:
+                elif (
+                    liquidity_min_threshold > order.amount_left
+                    and pending_cancel_liquidity == 0
+                    and order.amount_left < self.parent.max_order_size
+                ):
                     # Cancel order to replace it with a larger one due to insufficient liquidity
                     self.parent.send_cancel(order)
 
@@ -295,6 +299,7 @@ class MarketMakerSide:
             if order.state == OrderState.EMPTY and active_order_count < self.target_num_orders:
                 if liquidity_needed > self.min_order_size:
                     size = min(liquidity_needed, self.available_limit)
+                    size = min(size, self.parent.max_order_size)
                     # Round down the size to the precision of min_order_size
                     rounded_size = self.round_down_to_precision(size, self.min_order_size)
                     self.parent.logger.info(
