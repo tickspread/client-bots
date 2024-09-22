@@ -323,7 +323,7 @@ class MarketMakerSide:
 class MarketMaker:
     def __init__(self, api, *, logger=logging.getLogger(),
                  name="bot_example", version="0.0",
-                 orders_per_side=8, max_position=400, tick_jump=10, min_order_size=0.5, leverage=10, max_diff = 0.004, max_liquidity = -1):
+                 orders_per_side=8, max_position=400, tick_jump=10, min_order_size=0.5, leverage=10, max_diff = 0.004, max_liquidity = -1, max_order_size=10.0):
         # System
         self.api = api
         self.logger = logger
@@ -372,6 +372,7 @@ class MarketMaker:
         # Parameters
         self.tick_jump = Decimal(tick_jump)
         self.min_order_size = min_order_size
+        self.max_order_size = max_order_size
         self.leverage = leverage
         self.symbol = args.market
         self.money = args.money_asset
