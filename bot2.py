@@ -276,6 +276,8 @@ class MarketMakerSide:
                 f"Liquidity Min Threshold: {liquidity_min_threshold}"
             )
 
+            self.parent.logger.info(str(order))
+
             # Decide whether to cancel or keep existing orders
             if order.state != OrderState.EMPTY and order.cancel == CancelState.NORMAL:
                 if (
