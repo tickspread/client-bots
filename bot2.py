@@ -362,7 +362,8 @@ class MarketMakerSide:
 class MarketMaker:
     def __init__(self, api, market, money_asset, *, logger=logging.getLogger(),
                  name="bot_example", version="0.0",
-                 orders_per_side=8, max_position=400, tick_jump=10, min_order_size=0.5, leverage=10,
+                 orders_per_side=8, max_position=400, tick_jump=10, min_order_size=0.5,
+                 order_leverage=50, target_leverage=10,
                  max_diff = 0.004, max_liquidity = -1, max_order_size=10.0):
         """
         Initializes the MarketMaker with a circular buffer to manage orders.
@@ -416,7 +417,8 @@ class MarketMaker:
         self.tick_jump = Decimal(tick_jump)
         self.min_order_size = Decimal(min_order_size)
         self.max_order_size = Decimal(max_order_size)
-        self.leverage = Decimal(leverage)
+        self.order_leverage = Decimal(order_leverage)
+        self.target_leverage = Decimal(target_leverage)
         self.symbol = market
         self.money = money_asset
         self.max_diff = Decimal(str(max_diff))
@@ -462,7 +464,7 @@ class MarketMaker:
             self.register_new(order, clordid, amount, price)
             self.api.create_order(amount=amount,
                                   price=price,
-                                  leverage=self.leverage,
+                                  leverage=self.order_leverage,
                                   symbol=self.symbol,
                                   side=side_to_str(order.side),
                                   asynchronous=True,
@@ -877,9 +879,15 @@ class MarketMaker:
         # Handle trade-related events
         elif event in {"taker_trade", "maker_trade", "liquidation", "auto_deleverage"}:
             self.handle_trade_event(event, payload)
+        
+        elif event == "balance":
+            self.handle_balance_event(event, payload)
+        
+        elif event == "update_position":
+            self.handle_position_event(event, payload)
 
         # Handle other events that do not require specific actions
-        elif event in {"trade", "balance", "phx_reply", "update_position"}:
+        elif event in {"trade", "balance"}:
             pass  # No action needed for these events
 
         # Handle unknown or unhandled events
@@ -952,36 +960,24 @@ class MarketMaker:
             self.execution_band_low = Decimal(execution_band['low'])
 
     def handle_order_event(self, event, payload):
-        """
-        Handles order-related events by updating the execution state.
-
-        Args:
-            event (str): The type of order event.
-            payload (dict): The payload containing order details.
-
-        Process:
-            - Validates the presence of 'client_order_id'.
-            - Extracts the client order ID and processes the execution accordingly.
-        """
         if 'client_order_id' not in payload:
             self.logger.warning("No 'client_order_id' in TickSpread %s payload", event)
             return
 
         clordid = int(payload['client_order_id'])
-        self.receive_exec(event, clordid)  # Update order state based on the event
-
-    def handle_trade_event(self, event, payload):
+        self.receive_exec(event, clordid)  # Update order state based o
         """
-        Handles trade-related events by processing executed trades.
+        Handles 'update' events, which may include auction and execution band updates.
 
         Args:
-            event (str): The type of trade event.
-            payload (dict): The payload containing trade details.
+            payload (dict): The payload of the 'update' event.
 
         Process:
-            - Validates the presence of 'client_order_id', 'execution_amount', and 'side'.
-            - Extracts trade details and processes the trade execution.
+            - Validates the presence of 'auction_id'.
+            - Ensures auction IDs are sequential to maintain order consistency.
+            - Updates execution bands if present to adjust liquidity parameters.
         """
+    def handle_trade_event(self, event, payload):
         clordid = payload.get('client_order_id')
         if clordid is None:
             self.logger.warning("No 'client_order_id' in TickSpread %s payload", event)
@@ -1188,7 +1184,8 @@ async def main():
         max_order_size = Decimal(market_settings.get('max_order_size')) if 'max_order_size' in market_settings else None
         max_liquidity = Decimal(market_settings.get('max_liquidity')) if 'max_liquidity' in market_settings else None
         max_diff = float(market_settings.get('max_diff')) if 'max_diff' in market_settings else None
-        leverage = int(market_settings.get('leverage')) if 'leverage' in market_settings else None
+        order_leverage = int(market_settings.get('order_leverage')) if 'order_leverage' in market_settings else None
+        target_leverage = int(market_settings.get('target_leverage')) if 'target_leverage' in market_settings else None
     except (KeyError, ValueError) as e:
         logging.error(f"Invalid market settings for '{market}': {e}")
         sys.exit(1)
@@ -1207,8 +1204,10 @@ async def main():
         mmaker_params['max_liquidity'] = max_liquidity
     if max_diff is not None:
         mmaker_params['max_diff'] = max_diff
-    if leverage is not None:
-        mmaker_params['leverage'] = leverage
+    if order_leverage is not None:
+        mmaker_params['order_leverage'] = order_leverage
+    if target_leverage is not None:
+        mmaker_params['target_leverage'] = target_leverage
 
     mmaker = MarketMaker(api, market, general_config['money_asset'], **mmaker_params)
 
