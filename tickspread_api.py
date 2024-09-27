@@ -2,10 +2,13 @@ import os
 #os.environ['PYTHONASYNCIODEBUG'] = '1'
 
 import requests
+from requests.exceptions import HTTPError
+
 import json
 import asyncio
 import websockets
 import logging
+import aiohttp
 
 import time
 import sys
@@ -189,6 +192,74 @@ class TickSpreadAPI:
             self.logger.error(e)
             logging.shutdown()
             sys.exit(1)
+    
+    def update_margin_sync(self, market, amount):
+        url = f'{self.http_host}/v3/broker/margin_update_request'
+        payload = {
+            "market": market,
+            "amount": amount
+        }
+        
+        try:
+            r = requests.post(
+                url, 
+                headers={
+                    "Authorization": f"Bearer {self.token}",
+                    "Content-Type": "application/json"
+                },
+                json=payload,
+                timeout=5.0
+            )
+            r.raise_for_status()
+            self.logger.info(f"Margin update successful: {r.json()}")
+            return r.json()
+        except HTTPError as e:
+            self.logger.error(f"HTTP error updating margin: {e}")
+            return None
+        except requests.exceptions.RequestException as e:
+            self.logger.error(f"Error updating margin: {e}")
+            return None
+
+    async def update_margin_async(self, market, amount):
+        url = f'{self.http_host}/v3/broker/margin_update_request'
+        payload = {
+            "market": market,
+            "amount": amount
+        }
+        
+        async with aiohttp.ClientSession() as session:
+            try:
+                async with session.post(
+                    url,
+                    headers={
+                        "Authorization": f"Bearer {self.token}",
+                        "Content-Type": "application/json"
+                    },
+                    json=payload,
+                    timeout=5.0
+                ) as response:
+                    response.raise_for_status()
+                    result = await response.json()
+                    self.logger.info(f"Async margin update successful: {result}")
+                    return result
+            except aiohttp.ClientResponseError as e:
+                self.logger.error(f"HTTP error updating margin asynchronously: {e}")
+                return None
+            except aiohttp.ClientError as e:
+                self.logger.error(f"Error updating margin asynchronously: {e}")
+                return None
+
+    def update_margin(self, market, amount, asynchronous=False):
+        if asynchronous:
+            loop = asyncio.get_event_loop()
+            loop.run_in_executor(
+                None,
+                self.update_margin_sync,
+                market, amount
+            )
+            return "OK"
+        else:
+            return self.update_margin_sync(market, amount)
     
     async def connect(self):
         self.websocket = await websockets.connect("%s/realtime" % self.ws_host, ping_interval=None)
