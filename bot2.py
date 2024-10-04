@@ -1186,7 +1186,7 @@ async def main():
         max_liquidity = Decimal(market_settings.get('max_liquidity')) if 'max_liquidity' in market_settings else None
         max_diff = float(market_settings.get('max_diff')) if 'max_diff' in market_settings else None
         leverage = int(market_settings.get('leverage')) if 'leverage' in market_settings else None
-        spread_bps = int(market_settings.get('spread_bps')) if 'spread_bps' in market_settings else None
+        spread_bps = Decimal(market_settings.get('spread_bps')) if 'spread_bps' in market_settings else None
     except (KeyError, ValueError) as e:
         logging.error(f"Invalid market settings for '{market}': {e}")
         sys.exit(1)
