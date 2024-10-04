@@ -360,7 +360,7 @@ class MarketMaker:
     def __init__(self, api, market, money_asset, *, logger=logging.getLogger(),
                  name="bot_example", version="0.0",
                  orders_per_side=8, max_position=400, tick_jump=10, min_order_size=0.5, leverage=10,
-                 max_diff = 0.004, max_liquidity = -1, max_order_size=10.0):
+                 max_diff = 0.004, max_liquidity = -1, max_order_size=10.0, spread_bps=0.5):
         """
         Initializes the MarketMaker with a circular buffer to manage orders.
 
@@ -433,8 +433,8 @@ class MarketMaker:
         self.fair_price = None
         self.kyle_impact = None
         self.avg_tick_liquidity = None
-        self.spread = None
-
+        self.spread_bps = Decimal(spread_bps)
+    
     def log_new(self, side, amount, price, clordid):
         self.logger.info("->NEW %s %s @ %s (%d)" %
                          (side_to_str(side), amount, price, clordid))
@@ -691,8 +691,9 @@ class MarketMaker:
     def update_orders(self):
         self.logger.info("update_orders")
         assert (self.active)
-        self.bids.set_new_price(min(self.fair_price - self.spread, self.execution_band_high))
-        self.asks.set_new_price(max(self.fair_price + self.spread, self.execution_band_low))
+        price_spread = self.fair_price * self.spread_bps * Decimal(10000)
+        self.bids.set_new_price(min(self.fair_price - price_spread, self.execution_band_high))
+        self.asks.set_new_price(max(self.fair_price + price_spread, self.execution_band_low))
 
         self.bids.recalculate_all_orders()
         self.asks.recalculate_all_orders()
@@ -1034,7 +1035,6 @@ class MarketMaker:
                 self.fair_price = new_price * Decimal(factor)
                 self.kyle_impact = new_price * self.max_diff / self.max_position	# Price Impact (per position unit)
                 self.avg_tick_liquidity = self.tick_jump / self.kyle_impact     # On average how much liquidity we want per tick (based on tick jump)
-                self.spread = Decimal(0.0)
                 self.update_orders()
 
         self.api.dispatch_batch()
@@ -1186,6 +1186,7 @@ async def main():
         max_liquidity = Decimal(market_settings.get('max_liquidity')) if 'max_liquidity' in market_settings else None
         max_diff = float(market_settings.get('max_diff')) if 'max_diff' in market_settings else None
         leverage = int(market_settings.get('leverage')) if 'leverage' in market_settings else None
+        spread_bps = int(market_settings.get('spread_bps')) if 'spread_bps' in market_settings else None
     except (KeyError, ValueError) as e:
         logging.error(f"Invalid market settings for '{market}': {e}")
         sys.exit(1)

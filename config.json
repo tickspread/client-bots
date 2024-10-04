@@ -16,7 +16,8 @@
             "tick_jump": "0.5",
             "orders_per_side": 35,
             "min_order_size": "0.5",
-            "max_position": "100.0"
+            "max_position": "100.0",
+            "spread_bps": "0.3"
         },
         "SOL": {
             "external_market": "SOLUSDT",
@@ -24,7 +25,8 @@
             "orders_per_side": 35,
             "min_order_size": "10.0",
             "max_position": "300.0",
-            "max_order_size": "100.0"
+            "max_order_size": "100.0",
+            "spread_bps": "0.4"
         },
         "BNB": {
             "external_market": "BNBUSDT",
@@ -32,14 +34,17 @@
             "orders_per_side": 50,
             "min_order_size": "1.0",
             "max_position": "120.0",
-            "max_liquidity": "70.0"
+            "max_liquidity": "70.0",
+            "spread_bps": "0.4"
         },
         "BTC": {
             "external_market": "BTCUSDT",
             "tick_jump": "2.0",
             "orders_per_side": 50,
             "min_order_size": "0.01",
-            "max_position": "2.5"
+            "max_position": "2.5",
+            "max_liquidity": "1.0",
+            "spread_bps": "0.3"
         },
         "BTC|y000": {
             "external_market": "BTCUSDT",
