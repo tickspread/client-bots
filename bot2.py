@@ -204,16 +204,13 @@ class MarketMakerSide:
             self.handle_order_cancellations(order, price, liquidity_deltas, active_order_count)
 
             # Place new orders if necessary
-            self.place_new_orders_if_needed(order, liquidity_deltas, price, i)
+            if not self.has_reached_limits(total_liquidity, active_order_count):
+                self.place_new_orders_if_needed(order, liquidity_deltas, price, i)
 
             # Update liquidity counters based on current order state
             active_order_count, total_liquidity, pending_cancel_liquidity = self.update_liquidity_counters(
                 order, active_order_count, total_liquidity, pending_cancel_liquidity
             )
-
-            # Check if liquidity or order count limits have been reached
-            if self.has_reached_limits(total_liquidity, active_order_count):
-                break
 
             # Move to the next price level
             price += price_increment
