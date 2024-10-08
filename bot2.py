@@ -691,7 +691,7 @@ class MarketMaker:
     def update_orders(self):
         self.logger.info("update_orders")
         assert (self.active)
-        price_spread = self.fair_price * self.spread_bps * Decimal(10000)
+        price_spread = self.fair_price * self.spread_bps * Decimal(0.0001)
         self.bids.set_new_price(min(self.fair_price - price_spread, self.execution_band_high))
         self.asks.set_new_price(max(self.fair_price + price_spread, self.execution_band_low))
 
