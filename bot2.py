@@ -1227,14 +1227,18 @@ async def main():
 
     # Initialize and subscribe to external market APIs
     external_market = market_settings['external_market']
-    if external_market == 'XAU':
+    price_source = market_settings['price_source']
+    
+    if price_source == 'pyth_network':
         external_api = PythXauAPI()
         external_api.subscribe_index_price(external_market)
         external_api.on_message(mmaker.callback)
-    else:
+    elif price_source == 'binance_spot':
         binance_api = BinanceAPI()
         binance_api.subscribe_futures(external_market)
         binance_api.on_message(mmaker.callback)
+    else:
+        assert(False)
 
     logging.info("FINISH INIT")
 
