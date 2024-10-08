@@ -52,7 +52,7 @@
         },
         "XAU": {
             "price_source": "pyth_network",
-            "external_market": "XAU",
+            "external_market": "XAU/USD",
             "tick_jump": "2.0",
             "orders_per_side": 50,
             "min_order_size": "0.01",
