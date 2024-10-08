@@ -250,27 +250,20 @@ def test_callback(source, raw_data):
 
 
 async def main():
-    # bybit_api = ByBitAPI()
-    binance_api = BinanceAPI()
-    # bitmex_api = BitMEXAPI()
-    # huobi_api = HuobiAPI()
+    #binance_api = BinanceAPI()
+    pyth_xau_api = PythXauAPI()
 
     logging.basicConfig(level=logging.INFO, filename="dump.log")
 
-    # await bybit_api.connect()
-    # await bybit_api.subscribe()
-    # bybit_api.on_message(test_callback)
+    #binance_api.subscribe_futures('ETHUSDT')
+    #binance_api.on_message(test_callback)
 
-    binance_api.subscribe_futures('ETHUSDT')
-    binance_api.on_message(test_callback)
-    # binance_api.stop()
+    # Set up and test PythXauAPI
+    pyth_xau_api.subscribe_index_price('XAU/USD')
+    pyth_xau_api.on_message(test_callback)
 
-    # await bitmex_api.connect()
-    # bitmex_api.on_message(test_callback)
-
-    # await huobi_api.connect()
-    # await huobi_api.subscribe()
-    # huobi_api.on_message(test_callback)
+    # Run for a specific duration to test
+    await asyncio.sleep(60)  # Run for 60 seconds
 
 
 if __name__ == "__main__":
