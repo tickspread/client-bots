@@ -53,11 +53,11 @@
         "XAU": {
             "price_source": "pyth_network",
             "external_market": "XAU/USD",
-            "tick_jump": "2.0",
+            "tick_jump": "0.05",
             "orders_per_side": 50,
-            "min_order_size": "0.01",
-            "max_position": "2.5",
-            "max_liquidity": "1.0",
+            "min_order_size": "0.1",
+            "max_position": "10.0",
+            "max_liquidity": "8.0",
             "spread_bps": "0.3"
         },
         "BTC|y000": {
