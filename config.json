@@ -54,11 +54,12 @@
             "price_source": "pyth_network",
             "external_market": "XAU/USD",
             "tick_jump": "0.05",
-            "orders_per_side": 50,
-            "min_order_size": "0.1",
-            "max_position": "10.0",
-            "max_liquidity": "8.0",
-            "spread_bps": "0.3"
+            "orders_per_side": 30,
+            "min_order_size": "0.05",
+            "max_position": "20.0",
+            "max_liquidity": "16.0",
+            "spread_bps": "0.05",
+            "max_diff": "0.001"
         },
         "BTC|y000": {
             "price_source": "binance_spot",
