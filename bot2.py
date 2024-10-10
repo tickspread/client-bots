@@ -882,10 +882,10 @@ class MarketMaker:
             self.handle_trade_event(event, payload)
         
         elif event == "balance":
-            self.handle_balance_event(event, payload)
+            self.handle_balance_event(payload)
         
         elif event == "update_position":
-            self.handle_position_event(event, payload)
+            self.handle_position_event(payload)
 
         # Handle other events that do not require specific actions
         elif event == "trade":
