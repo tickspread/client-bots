@@ -169,8 +169,8 @@ class MarketMakerSide:
                 steps_diff = +int(price_diff / self.tick_jump)
             self.top_order = self.old_top_order + steps_diff
         self.parent.logger.debug(
-            "%s - top: %d => %d" %
-            (side_to_str(self.side), self.old_top_order, self.top_order))
+            "%s - top: %d => %d (%s)" %
+            (side_to_str(self.side), self.old_top_order, self.top_order, self.top_price))
 
     def recalculate_all_orders(self):
         current_time = time.time()
@@ -218,7 +218,7 @@ class MarketMakerSide:
     def log_recalculation(self, current_time):
         """Logs the start of the order recalculation process."""
         self.parent.logger.info(
-            "recalculate_top_orders: %d, top = (%d => %d) %s %d [time = %f/%f, available = %.2f]",
+            "recalculate_top_orders: %s, top = (%d => %d) %s %s [time = %f/%f, available = %.2f]",
             self.top_price,
             self.old_top_order,
             self.top_order,
@@ -692,6 +692,7 @@ class MarketMaker:
         self.logger.info("update_orders")
         assert (self.active)
         price_spread = self.fair_price * self.spread_bps * Decimal(0.0001)
+        
         self.bids.set_new_price(min(self.fair_price - price_spread, self.execution_band_high))
         self.asks.set_new_price(max(self.fair_price + price_spread, self.execution_band_low))
 
@@ -1016,7 +1017,6 @@ class MarketMaker:
                     if ("price" in trade_line):
                         new_price = Decimal(trade_line["price"])
         
-        self.logger.info("new_price = %.2f" % new_price)
         if (new_price != None):
             if (not self.active and
                     self.has_user_balance and
@@ -1035,6 +1035,8 @@ class MarketMaker:
                 self.fair_price = new_price * Decimal(factor)
                 self.kyle_impact = new_price * self.max_diff / self.max_position	# Price Impact (per position unit)
                 self.avg_tick_liquidity = self.tick_jump / self.kyle_impact     # On average how much liquidity we want per tick (based on tick jump)
+                
+                self.logger.info("new_price = %.2f, fair_price = %.2f, spread=%.3f%%" % (new_price, self.fair_price, Decimal(0.01)*self.spread_bps))
                 self.update_orders()
 
         self.api.dispatch_batch()
