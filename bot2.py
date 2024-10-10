@@ -862,6 +862,8 @@ class MarketMaker:
         payload = data['payload']
         topic = data['topic']
 
+        print("EVENT: ", event)
+
         # Handle 'partial' events based on the topic
         if event == "partial":
             self.handle_partial_event(topic, payload)
@@ -887,7 +889,7 @@ class MarketMaker:
             self.handle_position_event(event, payload)
 
         # Handle other events that do not require specific actions
-        elif event in {"trade", "balance"}:
+        elif event == "trade":
             pass  # No action needed for these events
 
         # Handle unknown or unhandled events
@@ -977,6 +979,11 @@ class MarketMaker:
             - Ensures auction IDs are sequential to maintain order consistency.
             - Updates execution bands if present to adjust liquidity parameters.
         """
+    
+    def handle_balance_event(self, payload):
+        print("BALANCE EVENT")
+        pass
+
     def handle_trade_event(self, event, payload):
         clordid = payload.get('client_order_id')
         if clordid is None:
