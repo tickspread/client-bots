@@ -1209,6 +1209,8 @@ async def main():
         mmaker_params['max_diff'] = max_diff
     if leverage is not None:
         mmaker_params['leverage'] = leverage
+    if spread_bps is not None:
+        mmaker_params['spread_bps'] = spread_bps
 
     mmaker = MarketMaker(api, market, general_config['money_asset'], **mmaker_params)
 
