@@ -169,8 +169,8 @@ class MarketMakerSide:
                 steps_diff = +int(price_diff / self.tick_jump)
             self.top_order = self.old_top_order + steps_diff
         self.parent.logger.debug(
-            "%s - top: %d => %d" %
-            (side_to_str(self.side), self.old_top_order, self.top_order))
+            "%s - top: %d => %d (%s)" %
+            (side_to_str(self.side), self.old_top_order, self.top_order, self.top_price))
 
     def recalculate_all_orders(self):
         current_time = time.time()
@@ -204,16 +204,13 @@ class MarketMakerSide:
             self.handle_order_cancellations(order, price, liquidity_deltas, active_order_count)
 
             # Place new orders if necessary
-            self.place_new_orders_if_needed(order, liquidity_deltas, price, i)
+            if not self.has_reached_limits(total_liquidity, active_order_count):
+                self.place_new_orders_if_needed(order, liquidity_deltas, price, i)
 
             # Update liquidity counters based on current order state
             active_order_count, total_liquidity, pending_cancel_liquidity = self.update_liquidity_counters(
                 order, active_order_count, total_liquidity, pending_cancel_liquidity
             )
-
-            # Check if liquidity or order count limits have been reached
-            if self.has_reached_limits(total_liquidity, active_order_count):
-                break
 
             # Move to the next price level
             price += price_increment
@@ -221,7 +218,7 @@ class MarketMakerSide:
     def log_recalculation(self, current_time):
         """Logs the start of the order recalculation process."""
         self.parent.logger.info(
-            "recalculate_top_orders: %d, top = (%d => %d) %s %d [time = %f/%f, available = %.2f]",
+            "recalculate_top_orders: %s, top = (%d => %d) %s %s [time = %f/%f, available = %.2f]",
             self.top_price,
             self.old_top_order,
             self.top_order,
@@ -364,7 +361,7 @@ class MarketMaker:
                  name="bot_example", version="0.0",
                  orders_per_side=8, max_position=400, tick_jump=10, min_order_size=0.5,
                  order_leverage=50, target_leverage=10,
-                 max_diff = 0.004, max_liquidity = -1, max_order_size=10.0):
+                 max_diff = 0.004, max_liquidity = -1, max_order_size=10.0, spread_bps=0.5):
         """
         Initializes the MarketMaker with a circular buffer to manage orders.
 
@@ -438,8 +435,8 @@ class MarketMaker:
         self.fair_price = None
         self.kyle_impact = None
         self.avg_tick_liquidity = None
-        self.spread = None
-
+        self.spread_bps = Decimal(spread_bps)
+    
     def log_new(self, side, amount, price, clordid):
         self.logger.info("->NEW %s %s @ %s (%d)" %
                          (side_to_str(side), amount, price, clordid))
@@ -696,8 +693,10 @@ class MarketMaker:
     def update_orders(self):
         self.logger.info("update_orders")
         assert (self.active)
-        self.bids.set_new_price(min(self.fair_price - self.spread, self.execution_band_high))
-        self.asks.set_new_price(max(self.fair_price + self.spread, self.execution_band_low))
+        price_spread = self.fair_price * self.spread_bps * Decimal(0.0001)
+        
+        self.bids.set_new_price(min(self.fair_price - price_spread, self.execution_band_high))
+        self.asks.set_new_price(max(self.fair_price + price_spread, self.execution_band_low))
 
         self.bids.recalculate_all_orders()
         self.asks.recalculate_all_orders()
@@ -1021,7 +1020,6 @@ class MarketMaker:
                     if ("price" in trade_line):
                         new_price = Decimal(trade_line["price"])
         
-        self.logger.info("new_price = %.2f" % new_price)
         if (new_price != None):
             if (not self.active and
                     self.has_user_balance and
@@ -1040,7 +1038,8 @@ class MarketMaker:
                 self.fair_price = new_price * Decimal(factor)
                 self.kyle_impact = new_price * self.max_diff / self.max_position	# Price Impact (per position unit)
                 self.avg_tick_liquidity = self.tick_jump / self.kyle_impact     # On average how much liquidity we want per tick (based on tick jump)
-                self.spread = Decimal(0.0)
+                
+                self.logger.info("new_price = %.2f, fair_price = %.2f, spread=%.3f%%" % (new_price, self.fair_price, Decimal(0.01)*self.spread_bps))
                 self.update_orders()
 
         self.api.dispatch_batch()
@@ -1193,6 +1192,7 @@ async def main():
         max_diff = float(market_settings.get('max_diff')) if 'max_diff' in market_settings else None
         order_leverage = int(market_settings.get('order_leverage')) if 'order_leverage' in market_settings else None
         target_leverage = int(market_settings.get('target_leverage')) if 'target_leverage' in market_settings else None
+        spread_bps = Decimal(market_settings.get('spread_bps')) if 'spread_bps' in market_settings else None
     except (KeyError, ValueError) as e:
         logging.error(f"Invalid market settings for '{market}': {e}")
         sys.exit(1)
@@ -1215,6 +1215,8 @@ async def main():
         mmaker_params['order_leverage'] = order_leverage
     if target_leverage is not None:
         mmaker_params['target_leverage'] = target_leverage
+    if spread_bps is not None:
+        mmaker_params['spread_bps'] = spread_bps
 
     mmaker = MarketMaker(api, market, general_config['money_asset'], **mmaker_params)
 
@@ -1235,14 +1237,18 @@ async def main():
 
     # Initialize and subscribe to external market APIs
     external_market = market_settings['external_market']
-    if external_market == 'XAU':
+    price_source = market_settings['price_source']
+    
+    if price_source == 'pyth_network':
         external_api = PythXauAPI()
         external_api.subscribe_index_price(external_market)
         external_api.on_message(mmaker.callback)
-    else:
+    elif price_source == 'binance_spot':
         binance_api = BinanceAPI()
         binance_api.subscribe_futures(external_market)
         binance_api.on_message(mmaker.callback)
+    else:
+        assert(False)
 
     logging.info("FINISH INIT")
 

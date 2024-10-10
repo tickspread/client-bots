@@ -12,36 +12,57 @@
     },
     "market_settings": {
         "ETH": {
+            "price_source": "binance_spot",
             "external_market": "ETHUSDT",
             "tick_jump": "0.5",
             "orders_per_side": 35,
             "min_order_size": "0.5",
-            "max_position": "100.0"
+            "max_position": "100.0",
+            "spread_bps": "0.3"
         },
         "SOL": {
+            "price_source": "binance_spot",
             "external_market": "SOLUSDT",
             "tick_jump": "0.05",
             "orders_per_side": 35,
             "min_order_size": "10.0",
             "max_position": "300.0",
-            "max_order_size": "100.0"
+            "max_order_size": "100.0",
+            "spread_bps": "0.4"
         },
         "BNB": {
+            "price_source": "binance_spot",
             "external_market": "BNBUSDT",
             "tick_jump": "0.2",
             "orders_per_side": 50,
             "min_order_size": "1.0",
             "max_position": "120.0",
-            "max_liquidity": "70.0"
+            "max_liquidity": "70.0",
+            "spread_bps": "0.4"
         },
         "BTC": {
+            "price_source": "binance_spot",
             "external_market": "BTCUSDT",
             "tick_jump": "2.0",
             "orders_per_side": 50,
             "min_order_size": "0.01",
-            "max_position": "2.5"
+            "max_position": "2.5",
+            "max_liquidity": "1.0",
+            "spread_bps": "0.3"
+        },
+        "XAU": {
+            "price_source": "pyth_network",
+            "external_market": "XAU/USD",
+            "tick_jump": "0.05",
+            "orders_per_side": 30,
+            "min_order_size": "0.05",
+            "max_position": "20.0",
+            "max_liquidity": "16.0",
+            "spread_bps": "0.05",
+            "max_diff": "0.001"
         },
         "BTC|y000": {
+            "price_source": "binance_spot",
             "external_market": "BTCUSDT",
             "tick_jump": "100.0",
             "orders_per_side": 40,
@@ -51,6 +72,7 @@
             "leverage": 2
         },
         "BTC|n000": {
+            "price_source": "binance_spot",
             "external_market": "BTCUSDT",
             "tick_jump": "100.0",
             "orders_per_side": 40,
@@ -60,6 +82,7 @@
             "leverage": 2
         },
         "ETH-TEST": {
+            "price_source": "binance_spot",
             "external_market": "ETHUSDT",
             "tick_jump": "0.2",
             "orders_per_side": 10,
@@ -67,6 +90,7 @@
             "max_position": "1.0"
         },
         "SOL-TEST": {
+            "price_source": "binance_spot",
             "external_market": "SOLUSDT",
             "tick_jump": "0.01",
             "orders_per_side": 0,
@@ -74,18 +98,12 @@
             "max_position": "20.0"
         },
         "BTC-TEST": {
+            "price_source": "binance_spot",
             "external_market": "BTCUSDT",
             "tick_jump": "1.0",
             "orders_per_side": 10,
             "min_order_size": "0.01",
             "max_position": "4.0"
-        },
-        "BTC-PERP": {
-            "external_market": "BTCUSDT",
-            "tick_jump": "2.0",
-            "orders_per_side": 50,
-            "min_order_size": "0.01",
-            "max_position": "18.0"
         }
     },
     "liquidity_curves": {
