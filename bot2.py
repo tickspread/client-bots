@@ -360,7 +360,7 @@ class MarketMaker:
     def __init__(self, api, market, money_asset, *, logger=logging.getLogger(),
                  name="bot_example", version="0.0",
                  orders_per_side=8, max_position=400, tick_jump=10, min_order_size=0.5,
-                 order_leverage=50, target_leverage=10,
+                 order_leverage=20, target_leverage=10,
                  max_diff = 0.004, max_liquidity = -1, max_order_size=10.0, spread_bps=0.5):
         """
         Initializes the MarketMaker with a circular buffer to manage orders.
@@ -393,8 +393,8 @@ class MarketMaker:
 
         # User State
         self.has_user_balance = False
-        self.balance_available = 0
-        self.balance_frozen = 0
+        self.balance_available = Decimal(0)
+        self.balance_frozen = Decimal(0)
 
         self.has_old_orders = False
         self.old_orders = []
@@ -691,7 +691,7 @@ class MarketMaker:
             self.bids.available_limit += execution_amount
 
     def update_orders(self):
-        self.logger.info("update_orders")
+        self.logger.info("update_orders (available = %s, frozen = %s)" % (self.balance_available, self.balance_frozen))
         assert (self.active)
         price_spread = self.fair_price * self.spread_bps * Decimal(0.0001)
         
@@ -860,8 +860,8 @@ class MarketMaker:
         event = data['event']
         payload = data['payload']
         topic = data['topic']
-
-        print("EVENT: ", event)
+        
+        self.logger.debug("EVENT: ", event)
 
         # Handle 'partial' events based on the topic
         if event == "partial":
@@ -980,8 +980,13 @@ class MarketMaker:
         """
     
     def handle_balance_event(self, payload):
-        print("BALANCE EVENT")
-        pass
+        asset = payload['asset']
+        if (asset == self.money):
+            self.balance_available = Decimal(payload['available'])
+            self.balance_frozen = Decimal(payload['frozen'])
+    
+    def handle_position_event(self, payload):
+        self.logger.info(payload)
 
     def handle_trade_event(self, event, payload):
         clordid = payload.get('client_order_id')
@@ -990,6 +995,8 @@ class MarketMaker:
             clordid = 0
         else:
             clordid = int(clordid)
+        
+        self.logger.info("TRADE_PAYLOAD: %s" % payload)
 
         if 'execution_amount' not in payload:
             self.logger.warning("No 'execution_amount' in TickSpread %s payload", event)

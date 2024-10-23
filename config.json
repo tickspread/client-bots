@@ -17,7 +17,8 @@
             "tick_jump": "0.5",
             "orders_per_side": 35,
             "min_order_size": "0.5",
-            "max_position": "100.0",
+            "max_position": "150.0",
+            "max_diff": "0.006",
             "spread_bps": "0.3"
         },
         "SOL": {
@@ -48,7 +49,7 @@
             "min_order_size": "0.01",
             "max_position": "2.5",
             "max_liquidity": "1.0",
-            "spread_bps": "0.3"
+            "spread_bps": "0.5"
         },
         "XAU": {
             "price_source": "pyth_network",
@@ -59,7 +60,8 @@
             "max_position": "20.0",
             "max_liquidity": "16.0",
             "spread_bps": "0.05",
-            "max_diff": "0.001"
+            "max_diff": "0.001",
+            "order_leverage": 10
         },
         "BTC|y000": {
             "price_source": "binance_spot",
